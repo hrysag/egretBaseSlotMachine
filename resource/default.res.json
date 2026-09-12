@@ -1,0 +1,199 @@
+{
+	"groups": [
+		{
+			"name": "preload",
+			"keys": "checkbox_select_disabled_png,checkbox_select_down_png,checkbox_select_up_png,checkbox_unselect_png,selected_png,border_png,header_png,radiobutton_select_disabled_png,radiobutton_select_down_png,radiobutton_select_up_png,radiobutton_unselect_png,roundthumb_png,thumb_png,track_png,tracklight_png,handle_png,off_png,on_png,button_down_png,button_up_png,thumb_pb_png,track_pb_png,track_sb_png,bg_jpg,egret_icon_png"
+		},
+		{
+			"name": "symbol",
+			"keys": "symbol_01_png,symbol_02_png,symbol_03_png,symbol_04_png,symbol_05_png,symbol_06_png,symbol_07_png,symbol_08_png,symbol_09_png,symbol_10_png,symbol_062_png,symbol_073_png"
+		}
+	],
+	"resources": [
+		{
+			"url": "assets/CheckBox/checkbox_select_disabled.png",
+			"type": "image",
+			"name": "checkbox_select_disabled_png"
+		},
+		{
+			"url": "assets/CheckBox/checkbox_select_down.png",
+			"type": "image",
+			"name": "checkbox_select_down_png"
+		},
+		{
+			"url": "assets/CheckBox/checkbox_select_up.png",
+			"type": "image",
+			"name": "checkbox_select_up_png"
+		},
+		{
+			"url": "assets/CheckBox/checkbox_unselect.png",
+			"type": "image",
+			"name": "checkbox_unselect_png"
+		},
+		{
+			"url": "assets/ItemRenderer/selected.png",
+			"type": "image",
+			"name": "selected_png"
+		},
+		{
+			"url": "assets/Panel/border.png",
+			"type": "image",
+			"name": "border_png"
+		},
+		{
+			"url": "assets/Panel/header.png",
+			"type": "image",
+			"name": "header_png"
+		},
+		{
+			"url": "assets/RadioButton/radiobutton_select_disabled.png",
+			"type": "image",
+			"name": "radiobutton_select_disabled_png"
+		},
+		{
+			"url": "assets/RadioButton/radiobutton_select_down.png",
+			"type": "image",
+			"name": "radiobutton_select_down_png"
+		},
+		{
+			"url": "assets/RadioButton/radiobutton_select_up.png",
+			"type": "image",
+			"name": "radiobutton_select_up_png"
+		},
+		{
+			"url": "assets/RadioButton/radiobutton_unselect.png",
+			"type": "image",
+			"name": "radiobutton_unselect_png"
+		},
+		{
+			"url": "assets/ScrollBar/roundthumb.png",
+			"type": "image",
+			"name": "roundthumb_png"
+		},
+		{
+			"url": "assets/Slider/thumb.png",
+			"type": "image",
+			"name": "thumb_png"
+		},
+		{
+			"url": "assets/Slider/track.png",
+			"type": "image",
+			"name": "track_png"
+		},
+		{
+			"url": "assets/Slider/tracklight.png",
+			"type": "image",
+			"name": "tracklight_png"
+		},
+		{
+			"url": "assets/ToggleSwitch/handle.png",
+			"type": "image",
+			"name": "handle_png"
+		},
+		{
+			"url": "assets/ToggleSwitch/off.png",
+			"type": "image",
+			"name": "off_png"
+		},
+		{
+			"url": "assets/ToggleSwitch/on.png",
+			"type": "image",
+			"name": "on_png"
+		},
+		{
+			"url": "assets/Button/button_down.png",
+			"type": "image",
+			"name": "button_down_png"
+		},
+		{
+			"url": "assets/Button/button_up.png",
+			"type": "image",
+			"name": "button_up_png"
+		},
+		{
+			"url": "assets/ProgressBar/thumb_pb.png",
+			"type": "image",
+			"name": "thumb_pb_png"
+		},
+		{
+			"url": "assets/ProgressBar/track_pb.png",
+			"type": "image",
+			"name": "track_pb_png"
+		},
+		{
+			"url": "assets/ScrollBar/track_sb.png",
+			"type": "image",
+			"name": "track_sb_png"
+		},
+		{
+			"url": "assets/bg.jpg",
+			"type": "image",
+			"name": "bg_jpg"
+		},
+		{
+			"url": "assets/egret_icon.png",
+			"type": "image",
+			"name": "egret_icon_png"
+		},
+		{
+			"url": "assets/symbols/01.png",
+			"type": "image",
+			"name": "symbol_01_png"
+		},
+		{
+			"url": "assets/symbols/02.png",
+			"type": "image",
+			"name": "symbol_02_png"
+		},
+		{
+			"url": "assets/symbols/03.png",
+			"type": "image",
+			"name": "symbol_03_png"
+		},
+		{
+			"url": "assets/symbols/04.png",
+			"type": "image",
+			"name": "symbol_04_png"
+		},
+		{
+			"url": "assets/symbols/05.png",
+			"type": "image",
+			"name": "symbol_05_png"
+		},
+		{
+			"url": "assets/symbols/06.png",
+			"type": "image",
+			"name": "symbol_06_png"
+		},
+		{
+			"url": "assets/symbols/07.png",
+			"type": "image",
+			"name": "symbol_07_png"
+		},
+		{
+			"url": "assets/symbols/08.png",
+			"type": "image",
+			"name": "symbol_08_png"
+		},
+		{
+			"url": "assets/symbols/09.png",
+			"type": "image",
+			"name": "symbol_09_png"
+		},
+		{
+			"url": "assets/symbols/10.png",
+			"type": "image",
+			"name": "symbol_10_png"
+		},
+		{
+			"url": "assets/symbols/062.png",
+			"type": "image",
+			"name": "symbol_062_png"
+		},
+		{
+			"url": "assets/symbols/073.png",
+			"type": "image",
+			"name": "symbol_073_png"
+		}
+	]
+}

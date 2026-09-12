@@ -1,0 +1,18 @@
+# Egret build 產物
+bin-debug/
+bin-release/
+
+# 建置外掛的 npm 相依（107 MB）
+# 還原方式見 doc：
+#   cd scripts/plugins
+#   npm install --registry=https://registry.npmmirror.com
+# 版本由 scripts/plugins/package-lock.json 鎖定
+scripts/plugins/node_modules/
+
+# 編輯器暫存
+.wing/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

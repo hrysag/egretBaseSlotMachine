@@ -1,0 +1,35 @@
+{
+  "engineVersion": "5.4.1",
+  "compilerVersion": "5.4.1",
+  "template": {},
+  "target": {
+    "current": "web"
+  },
+  "modules": [
+    {
+      "name": "egret",
+      "path": "../egret-core-master/egret-core-master/build/egret"
+    },
+    {
+      "name": "eui",
+      "path": "../egret-core-master/egret-core-master/build/eui"
+    },
+    {
+      "name": "assetsmanager",
+      "path": "../egret-core-master/egret-core-master/build/assetsmanager"
+    },
+    {
+      "name": "tween",
+      "path": "../egret-core-master/egret-core-master/build/tween"
+    },
+    {
+      "name": "promise",
+      "path": "../egret-core-master/egret-core-master/build/promise"
+    }
+  ],
+  "eui": {
+    "exmlRoot": [
+      "resource/eui_skins"
+    ]
+  }
+}

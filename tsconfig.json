@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "target": "es5",
+        "outDir": "bin-debug",
+        "experimentalDecorators": true,
+        "lib": [
+            "es5",
+            "dom",
+            "es2015.promise",
+            "es2015.core",
+            "es2015.collection"
+        ],
+        "types": [],
+        "baseUrl": ".",
+        "paths": {
+            "tslib": [
+                "scripts/plugins/node_modules/tslib"
+            ]
+        }
+    },
+    "include": [
+        "src",
+        "libs"
+    ]
+}
