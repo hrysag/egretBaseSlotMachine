@@ -2,6 +2,9 @@
 bin-debug/
 bin-release/
 
+# 純 TS 測試的一次性編譯輸出
+temp/
+
 # 建置外掛的 npm 相依（107 MB）
 # 還原方式見 doc：
 #   cd scripts/plugins
