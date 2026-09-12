@@ -4,6 +4,9 @@ import {
 } from "./BaseMovement";
 import { ReelEffectEasing } from "../Config/ReelEffectEasing";
 import { ReelEffectConfig } from "../Config/ReelEffectConfig";
+import {
+    assertNonNegativeFiniteNumber,
+} from "../../Internal/NumberAssert";
 
 /**
  * Reel 軸向顯示效果的純數值控制器。
@@ -59,15 +62,15 @@ export class ReelAxisEffect {
             return;
         }
 
-        this.assertNonNegativeFiniteNumber(
+        assertNonNegativeFiniteNumber(
             config.distance,
             "bounce.distance",
         );
-        this.assertNonNegativeFiniteNumber(
+        assertNonNegativeFiniteNumber(
             config.outwardDuration,
             "bounce.outwardDuration",
         );
-        this.assertNonNegativeFiniteNumber(
+        assertNonNegativeFiniteNumber(
             config.returnDuration,
             "bounce.returnDuration",
         );
@@ -86,10 +89,13 @@ export class ReelAxisEffect {
     }
 
     /**
-     * 開始 Bounce。
+     * 開始播放效果：先移到 `distance × outwardDirection`，再回到 0。
      *
-     * Reel 的 Runtime 預設沿負軸向移動，所以先移到負距離，
-     * 再回到 0；畫面反向顯示仍由 ReelIconManager 統一處理。
+     * 軸向座標一律往退場方向遞增，因此：
+     * - 啟動效果逆著滾動拉 → `outwardDirection = -1`
+     * - 停止效果順著滾動衝 → `outwardDirection = +1`
+     *
+     * 畫面上的實際方向由 ReelIconManager 的軸向映射統一處理。
      */
     public start(
         outwardDirection = -1,
@@ -213,15 +219,4 @@ export class ReelAxisEffect {
                 + overshoot * shifted * shifted;
         },
     };
-
-    private assertNonNegativeFiniteNumber(
-        value: number,
-        label: string,
-    ): void {
-        if (!Number.isFinite(value) || value < 0) {
-            throw new Error(
-                `${label} must be a non-negative finite number.`,
-            );
-        }
-    }
 }

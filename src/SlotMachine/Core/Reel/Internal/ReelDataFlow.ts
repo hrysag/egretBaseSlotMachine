@@ -55,12 +55,20 @@ export class ReelDataFlow {
         return this._resultStartIndex >= 0;
     }
 
-    /** 取代表演牌庫，並清除上一輪尚未完成的結果區段。 */
+    /**
+     * 取代表演牌庫，並清除上一輪尚未完成的結果區段。
+     *
+     * 牌庫本身以 **Symbol** 為單位（遊戲端照原本的方式定義牌庫）；
+     * 進入資料列表時才由框架展開成 Cell。
+     */
     public setPerformanceDataBank(
         data: SymbolData[],
+        cellSpanResolver: ReelCellSpanResolver,
     ): void {
         this._dataList.reset();
-        this._dataList.append(data);
+        this._dataList.append(
+            this.expandSymbolsToCells(data, cellSpanResolver),
+        );
         this._performanceDataBank.length = 0;
         this._performanceDataBank.push(...data);
         this._performanceDataReadIndex = 0;
@@ -70,6 +78,7 @@ export class ReelDataFlow {
     /** 正式結果尚未提交時，追加可循環使用的表演資料。 */
     public appendPerformanceData(
         data: SymbolData[],
+        cellSpanResolver: ReelCellSpanResolver,
     ): void {
         if (this.resultCommitted) {
             throw new Error(
@@ -77,7 +86,9 @@ export class ReelDataFlow {
             );
         }
 
-        this._dataList.append(data);
+        this._dataList.append(
+            this.expandSymbolsToCells(data, cellSpanResolver),
+        );
         this._performanceDataBank.push(...data);
     }
 
@@ -113,6 +124,7 @@ export class ReelDataFlow {
     public consumeNextData(
         performanceDataProvider: ReelPerformanceDataProvider,
         validator: ReelDataValidator,
+        cellSpanResolver: ReelCellSpanResolver,
     ): ReelConsumedData | undefined {
         const readIndex = this._dataList.readIndex;
         const queuedData = this._dataList.consume();
@@ -134,12 +146,21 @@ export class ReelDataFlow {
             return undefined;
         }
 
+        /*
+         * 資料用完時動態補牌：整組展開成 Cell 一次入列，
+         * 確保列表永遠以完整 group 結尾，group 邊界不會被切在中間。
+         */
         const performanceData = performanceDataProvider();
         validator(
             performanceData,
             "getNextPerformanceData result",
         );
-        this._dataList.append([performanceData]);
+        this._dataList.append(
+            this.expandSymbolsToCells(
+                [performanceData],
+                cellSpanResolver,
+            ),
+        );
         const consumedPerformanceData = this._dataList.consume();
 
         return consumedPerformanceData === undefined
@@ -148,10 +169,15 @@ export class ReelDataFlow {
     }
 
     /**
-     * 以「保留表演資料＋反向進場結果＋必要尾牌」替換未讀資料，
+     * 以「保留表演資料＋逐 Cell 結果＋群組收尾＋必要尾牌」替換未讀資料，
      * 並記錄本輪正式結果在完整資料列表中的區段。
      *
+     * 資料列表一律以 **Cell** 為單位：1×N Symbol 會展開成 N 筆相同 id，
+     * 由 ReelIconManager 在綁定時依「朝退場方向的鄰居」推導 groupOffset。
+     *
      * 未提供 Cell 預算時保留全部未讀表演資料。
+     *
+     * @returns 實際保留的表演 Cell 數
      */
     public commitResult(
         visibleResult: SymbolData[],
@@ -165,48 +191,72 @@ export class ReelDataFlow {
         this._committedResult.length = 0;
         this._committedResult.push(...visibleResult);
 
-        const resultIconData = this.collapseResultCellData(
-            visibleResult,
+        /*
+         * Server 給的是畫面閱讀順序，先依方向轉成「退場端 → 進場端」。
+         * 佇列的消耗順序就是進場順序，所以轉完直接依序入列即可。
+         */
+        const resultEntryCells = reverseResultEntry
+            ? [...visibleResult].reverse()
+            : [...visibleResult];
+
+        /*
+         * 收尾：若最後一格所屬的 group 尚未湊滿，補上缺少的格數。
+         * 這幾格會停在進場端 buffer，正是「被顯示區截斷的大 Symbol」
+         * 那張圖的 head 所在。不是特例處理，是同一條規則跑到 offset 歸零。
+         */
+        const completionCells = this.createGroupCompletionCells(
+            resultEntryCells,
             cellSpanResolver,
         );
         const remainingPerformanceData =
             this._dataList.remainingData;
-        const retainedPerformanceData =
+        const retainedPerformanceCells =
             performanceCellBudget === undefined
                 ? [...remainingPerformanceData]
-                : this.takeDataByCellBudget(
+                : this.takePerformanceCellsByBudget(
                     remainingPerformanceData,
                     performanceCellBudget,
                     cellSpanResolver,
                     performanceDataProvider,
                     validator,
                 );
-        const resultEntryData = reverseResultEntry
-            ? [...resultIconData].reverse()
-            : [...resultIconData];
+        const resultSegment = [
+            ...resultEntryCells,
+            ...completionCells,
+        ];
 
         this._dataList.replaceRemaining([
-            ...retainedPerformanceData,
-            ...resultEntryData,
+            ...retainedPerformanceCells,
+            ...resultSegment,
             ...requiredTail,
         ]);
         this._resultStartIndex =
             this._dataList.length
-            - resultIconData.length
+            - resultSegment.length
             - requiredTail.length;
         this._resultEndIndex =
-            this._resultStartIndex + resultIconData.length;
+            this._resultStartIndex + resultSegment.length;
 
-        return this.countCells(
-            retainedPerformanceData,
-            cellSpanResolver,
+        return retainedPerformanceCells.length;
+    }
+
+    /**
+     * 略過正式結果前仍未消耗的表演資料。
+     *
+     * 資料列表以 Cell 為單位，所以不再需要 cellSpanResolver。
+     */
+    public pendingCellCountBeforeResult(): number {
+        if (!this.resultCommitted) {
+            return 0;
+        }
+
+        return Math.max(
+            0,
+            this._resultStartIndex - this._dataList.readIndex,
         );
     }
 
-    /** 略過正式結果前仍未消耗的表演資料。 */
-    public skipPendingPerformanceData(
-        cellSpanResolver: ReelCellSpanResolver,
-    ): ReelQuickStopSkipResult {
+    public skipPendingPerformanceData(): ReelQuickStopSkipResult {
         if (!this.resultCommitted) {
             return {
                 skippedDataCount: 0,
@@ -224,15 +274,10 @@ export class ReelDataFlow {
             };
         }
 
-        const skippedData = this._dataList.preview(skipCount);
-        const skippedCellCount = this.countCells(
-            skippedData,
-            cellSpanResolver,
-        );
-
+        /* 資料列表以 Cell 為單位，筆數即 Cell 數。 */
         return {
             skippedDataCount: this._dataList.skip(skipCount),
-            skippedCellCount,
+            skippedCellCount: skipCount,
         };
     }
 
@@ -252,10 +297,16 @@ export class ReelDataFlow {
             return 0;
         }
 
+        /*
+         * 補牌只用 1×1：每一格自成一個完整 group，任何數量都湊得出來。
+         * 若改用多格 Symbol，補入 N 格就必須讓 N 能被該 Symbol 的
+         * cellSpan 整除，否則會在結果前留下一個不完整的 group。
+         */
         const padding: SymbolData[] = [];
 
         for (let index = 0; index < cellCount; index++) {
-            const item = this.takeNextSingleCellPerformanceData(
+            const item = this.takeNextPerformanceSymbol(
+                (cellSpan) => cellSpan === 1,
                 cellSpanResolver,
                 performanceDataProvider,
                 validator,
@@ -270,17 +321,6 @@ export class ReelDataFlow {
 
             padding.push(item);
         }
-        const retainedCellCount = this.countCells(
-            padding,
-            cellSpanResolver,
-        );
-
-        if (retainedCellCount !== cellCount) {
-            throw new Error(
-                "Performance data bank cannot provide the required "
-                + `${cellCount} synchronization Cells.`,
-            );
-        }
 
         this._dataList.replaceRemaining([
             ...padding,
@@ -288,20 +328,7 @@ export class ReelDataFlow {
         ]);
         this._resultStartIndex += padding.length;
         this._resultEndIndex += padding.length;
-        return retainedCellCount;
-    }
-
-    public countCells(
-        data: SymbolData[],
-        cellSpanResolver: ReelCellSpanResolver,
-    ): number {
-        let total = 0;
-
-        for (const item of data) {
-            total += cellSpanResolver(item);
-        }
-
-        return total;
+        return padding.length;
     }
 
     /** 釋放全部輪次資料與內部讀取狀態。 */
@@ -320,85 +347,129 @@ export class ReelDataFlow {
     }
 
     /**
-     * 將 Server 的逐 Cell 結果還原成需要進場的完整 Icon 資料。
+     * 把以 Symbol 為單位的資料展開成逐 Cell。
      *
-     * 例如 7 為三格 Symbol 時，[7,7,1] 代表一個部分可見的 7
-     * 與一個 1，不會建立成兩個三格高的 7。
+     * 1×N 會展開成 N 筆同一個 SymbolData 參考（不 clone）；
+     * groupOffset 不在這裡決定，而是由 ReelIconManager 在綁定時
+     * 依「朝退場方向的鄰居」推導，因為那才知道實際的相鄰關係。
      */
-    private collapseResultCellData(
-        resultCells: SymbolData[],
+    private expandSymbolsToCells(
+        data: SymbolData[],
         cellSpanResolver: ReelCellSpanResolver,
     ): SymbolData[] {
-        const result: SymbolData[] = [];
-        let index = 0;
+        const cells: SymbolData[] = [];
 
-        while (index < resultCells.length) {
-            const data = resultCells[index];
-            const cellSpan = cellSpanResolver(data);
-            let repeatedCells = 1;
+        for (const symbol of data) {
+            const cellSpan = cellSpanResolver(symbol);
 
-            while (
-                repeatedCells < cellSpan
-                && index + repeatedCells < resultCells.length
-                && resultCells[index + repeatedCells].id === data.id
-            ) {
-                repeatedCells++;
+            for (let index = 0; index < cellSpan; index++) {
+                cells.push(symbol);
             }
-
-            result.push(data);
-            index += repeatedCells;
         }
 
-        return result;
+        return cells;
     }
 
-    private takeDataByCellBudget(
-        data: SymbolData[],
+    /**
+     * 依「退場端 → 進場端」掃描結果，算出進場端那一組還缺幾格，
+     * 並產生補齊用的 Cell。
+     *
+     * 掃描規則與 ReelIconManager 綁定時用的完全相同：
+     * 前一格同 id 且尚未湊滿就接續，否則開新組。
+     *
+     * 例：7 為三格 Symbol、盤面三格、Server 給 [7,7,1]。
+     * 進場順序為 1 → 7 → 7，掃完最後一格的 offset 是 1，
+     * 因此補一格 7；那一格就是這張被截斷的 1×3 的 head，
+     * 停在進場端 buffer 內。
+     *
+     * 第一格一律開新組 —— 結果之前的表演資料永遠以完整 group 結尾
+     * （表演 Symbol 入列時整組展開），所以邊界不會意外接在一起。
+     */
+    private createGroupCompletionCells(
+        resultEntryCells: SymbolData[],
+        cellSpanResolver: ReelCellSpanResolver,
+    ): SymbolData[] {
+        if (resultEntryCells.length === 0) {
+            return [];
+        }
+
+        let previous: SymbolData | undefined;
+        let offset = 0;
+
+        for (const cell of resultEntryCells) {
+            const continuesGroup =
+                previous !== undefined
+                && previous.id === cell.id
+                && offset > 0;
+
+            offset = continuesGroup
+                ? offset - 1
+                : cellSpanResolver(cell) - 1;
+            previous = cell;
+        }
+
+        const lastCell = resultEntryCells[resultEntryCells.length - 1];
+        const completion: SymbolData[] = [];
+
+        for (let index = 0; index < offset; index++) {
+            completion.push(lastCell);
+        }
+
+        return completion;
+    }
+
+    /**
+     * 依 Cell 預算保留表演資料。
+     *
+     * 資料列表已是逐 Cell，所以預算就是筆數。既有未讀資料直接取用；
+     * 不足時向表演資料來源要新的 Symbol 並整組展開成 Cell。
+     *
+     * 剩餘預算放不下一整組時改用 1×1 補滿 —— 這樣時間永遠精確，
+     * 代價只是最後幾格的表演牌長相受限。牌庫因此至少要有一張 1×1。
+     */
+    private takePerformanceCellsByBudget(
+        remainingCells: SymbolData[],
         cellBudget: number,
         cellSpanResolver: ReelCellSpanResolver,
         performanceDataProvider: ReelPerformanceDataProvider,
         validator: ReelDataValidator,
     ): SymbolData[] {
-        const result: SymbolData[] = [];
-        let retainedCells = 0;
+        const result = remainingCells.slice(0, cellBudget);
 
-        for (const item of data) {
-            if (retainedCells >= cellBudget) {
-                break;
-            }
-
-            const cellSpan = cellSpanResolver(item);
-
-            if (retainedCells + cellSpan > cellBudget) {
-                continue;
-            }
-
-            result.push(item);
-            retainedCells += cellSpan;
-        }
-
-        while (retainedCells < cellBudget) {
-            const item = this.takeNextPerformanceDataThatFits(
-                cellBudget - retainedCells,
+        while (result.length < cellBudget) {
+            const shortfall = cellBudget - result.length;
+            const symbol = this.takeNextPerformanceSymbol(
+                (cellSpan) => cellSpan <= shortfall,
                 cellSpanResolver,
                 performanceDataProvider,
                 validator,
             );
 
-            if (item === undefined) {
+            if (symbol === undefined) {
                 break;
             }
 
-            result.push(item);
-            retainedCells += cellSpanResolver(item);
+            const cellSpan = cellSpanResolver(symbol);
+
+            for (let index = 0; index < cellSpan; index++) {
+                result.push(symbol);
+            }
         }
 
         return result;
     }
 
-    /** 最多搜尋表演牌庫一輪，避免牌都過大時無限循環。 */
-    private takeNextPerformanceDataThatFits(
-        remainingCells: number,
+    /**
+     * 向表演資料來源要一張 `accepts()` 接受的 Symbol。
+     *
+     * 兩種用途共用同一條迴圈，只有判斷式不同：
+     * 裝箱收尾要「塞得進剩餘預算」（`cellSpan <= shortfall`），
+     * Turbo 同步補牌要「恰好一格」（`cellSpan === 1`）。
+     *
+     * 最多搜尋表演牌庫一輪，避免牌都過大時無限循環。
+     */
+    private takeNextPerformanceSymbol(
+        accepts: (cellSpan: number) => boolean,
         cellSpanResolver: ReelCellSpanResolver,
         performanceDataProvider: ReelPerformanceDataProvider,
         validator: ReelDataValidator,
@@ -415,33 +486,7 @@ export class ReelDataFlow {
                 "getNextPerformanceData result",
             );
 
-            if (cellSpanResolver(item) <= remainingCells) {
-                return item;
-            }
-        }
-
-        return undefined;
-    }
-
-    /** Turbo 同步補牌只能使用 1×1，避免多格 Symbol 改變 Handoff 相位。 */
-    private takeNextSingleCellPerformanceData(
-        cellSpanResolver: ReelCellSpanResolver,
-        performanceDataProvider: ReelPerformanceDataProvider,
-        validator: ReelDataValidator,
-    ): SymbolData | undefined {
-        const searchLimit = Math.max(
-            1,
-            this._performanceDataBank.length,
-        );
-
-        for (let index = 0; index < searchLimit; index++) {
-            const item = performanceDataProvider();
-            validator(
-                item,
-                "getNextPerformanceData result",
-            );
-
-            if (cellSpanResolver(item) === 1) {
+            if (accepts(cellSpanResolver(item))) {
                 return item;
             }
         }

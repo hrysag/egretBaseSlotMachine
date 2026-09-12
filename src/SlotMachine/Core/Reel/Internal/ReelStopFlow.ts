@@ -24,7 +24,7 @@ interface ReelResultEntryPlan {
 
 /** 管理單軸結果進場、QuickStop、ServerLate 與停止時間規劃。 */
 export class ReelStopFlow {
-    private _timing?: ReelTimingConfig;
+    private _targetStopTime?: number;
     private _lastStopPlan?: ReelStopPlan;
     private _elapsedRollTime = 0;
     private _quickStopRequested = false;
@@ -51,46 +51,21 @@ export class ReelStopFlow {
         return this._lastStopPlan;
     }
 
-    public get quickStopRequested(): boolean {
-        return this._quickStopRequested;
-    }
-
     public get resultEntryPending(): boolean {
         return this._visibleResult !== undefined;
     }
 
-    public get pendingVisibleResult(): SymbolData[] {
-        return this._visibleResult ?? [];
-    }
-
-    public get pendingRequiredTail(): SymbolData[] {
-        return this._requiredTail;
-    }
-
     public get targetStopTime(): number | undefined {
-        return this._timing?.targetStopTime;
-    }
-
-    public get moveInterval(): number {
-        return this._timing?.moveInterval ?? 0;
+        return this._targetStopTime;
     }
 
     public setTiming(config: ReelTimingConfig): void {
-        this._timing = {
-            targetStopTime: config.targetStopTime,
-            moveInterval: config.moveInterval,
-        };
+        this._targetStopTime = config.targetStopTime;
     }
 
     public setTargetStopTime(targetStopTime: number): void {
-        if (this._timing !== undefined) {
-            this._timing.targetStopTime = targetStopTime;
-        }
-    }
-
-    public setMoveInterval(moveInterval: number): void {
-        if (this._timing !== undefined) {
-            this._timing.moveInterval = moveInterval;
+        if (this._targetStopTime !== undefined) {
+            this._targetStopTime = targetStopTime;
         }
     }
 
@@ -130,11 +105,10 @@ export class ReelStopFlow {
      */
     public tryCommitResultAtHandoff(
         moveInterval: number,
-        completedHalfCellCount: number,
         resultEntryHalfCellCount: number,
     ): boolean {
         const visibleResult = this._visibleResult;
-        const targetStopTime = this._timing?.targetStopTime;
+        const targetStopTime = this._targetStopTime;
 
         if (
             visibleResult === undefined
@@ -143,26 +117,18 @@ export class ReelStopFlow {
             return false;
         }
 
+        /*
+         * 每格等寬之後相位恆定：提交固定發生在第二個半格結束，
+         * 剩餘半格數必為偶數，1×N 時代的奇偶修正已不需要。
+         */
         const halfCellDuration = moveInterval * 0.5;
-        let targetRemainingHalfCellCount = Math.max(
+        const targetRemainingHalfCellCount = Math.max(
             0,
             Math.floor(
                 (targetStopTime - this._elapsedRollTime)
                 / halfCellDuration,
             ),
         );
-        const requiredRemainingParity =
-            completedHalfCellCount % 2;
-
-        if (
-            targetRemainingHalfCellCount % 2
-            !== requiredRemainingParity
-        ) {
-            targetRemainingHalfCellCount = Math.max(
-                0,
-                targetRemainingHalfCellCount - 1,
-            );
-        }
 
         const directResultStopTime =
             this._elapsedRollTime
@@ -221,7 +187,10 @@ export class ReelStopFlow {
         return true;
     }
 
-    public applyQuickStopSkip(skip: ReelQuickStopSkip): void {
+    public applyQuickStopSkip(
+        skip: ReelQuickStopSkip,
+        moveInterval: number,
+    ): void {
         if (this._lastStopPlan === undefined) {
             return;
         }
@@ -238,7 +207,7 @@ export class ReelStopFlow {
                     this._elapsedRollTime,
                     this._lastStopPlan.actualStopTime
                     - skip.skippedCellCount
-                    * this.getMoveInterval(),
+                    * moveInterval,
                 );
 
         this._lastStopPlan = {
@@ -256,7 +225,10 @@ export class ReelStopFlow {
     }
 
     /** 將 Turbo 同步補回的表演 Cell 反映到除錯用 StopPlan。 */
-    public applyQuickStopPadding(cellCount: number): void {
+    public applyQuickStopPadding(
+        cellCount: number,
+        moveInterval: number,
+    ): void {
         if (
             this._lastStopPlan === undefined
             || cellCount <= 0
@@ -268,7 +240,7 @@ export class ReelStopFlow {
             ...this._lastStopPlan,
             actualStopTime:
                 this._lastStopPlan.actualStopTime
-                + cellCount * this.getMoveInterval(),
+                + cellCount * moveInterval,
             performanceCellCount:
                 this._lastStopPlan.performanceCellCount
                 + cellCount,
@@ -276,13 +248,13 @@ export class ReelStopFlow {
     }
 
     public cleanup(): void {
-        this._timing = undefined;
+        this._targetStopTime = undefined;
         this.beginSpin();
     }
 
     private confirmResultEntryPlan(plan: ReelResultEntryPlan): void {
         if (
-            this._timing === undefined
+            this._targetStopTime === undefined
             || this._resultReceivedTime === undefined
         ) {
             return;
@@ -294,14 +266,14 @@ export class ReelStopFlow {
             expediteReason = ReelExpediteReason.QuickStop;
         } else if (
             plan.directResultStopTime
-            >= this._timing.targetStopTime
+            >= this._targetStopTime
         ) {
             expediteReason = ReelExpediteReason.ServerLate;
         }
 
         this._lastStopPlan = {
             resultReceivedTime: this._resultReceivedTime,
-            requestedStopTime: this._timing.targetStopTime,
+            requestedStopTime: this._targetStopTime,
             currentMovementTime:
                 this._resultReceivedMovementTime,
             minimumResultTravelTime:
@@ -316,7 +288,7 @@ export class ReelStopFlow {
             lateBy: Math.max(
                 0,
                 plan.directResultStopTime
-                - this._timing.targetStopTime,
+                - this._targetStopTime,
             ),
             expediteReason,
         };
@@ -329,62 +301,4 @@ export class ReelStopFlow {
         this._quickStopPerformanceCellBudget = undefined;
     }
 
-    /**
-     * Server 結果本身是逐 Cell 資料；兩端各有一格 Buffer，
-     * 因此從第一張結果進場到完整對齊，固定需要可視 Cell 加兩格。
-     *
-     * 這裡仍逐筆取得 cellSpan，確認重複 ID 代表同一張 1×N
-     * Symbol 的可視 Cell，而不是把每筆都誤當成完整 Icon。
-     */
-    private getResultTravelCellCount(
-        visibleResult: SymbolData[],
-    ): number {
-        const currentExitMissingCellCount =
-            this.getExitMissingCellCount(visibleResult);
-
-        /*
-         * 一格用於結果從進場 Buffer 交接到 Display；
-         * 頭尾缺口只保存 Cell 數，不反查 Icon Runtime 或未來位置。
-         */
-        return Math.max(
-            0,
-            visibleResult.length
-            + 1
-            + currentExitMissingCellCount
-            - 0,
-        );
-    }
-
-    private getExitMissingCellCount(
-        visibleResult: SymbolData[],
-    ): number {
-        const exitIndex = this._reverseResultEntry
-            ? visibleResult.length - 1
-            : 0;
-        const step = this._reverseResultEntry ? -1 : 1;
-        const exitData = visibleResult[exitIndex];
-        const cellSpan = this._cellSpanResolver(exitData);
-        let visibleConsecutiveCellCount = 0;
-
-        for (
-            let index = exitIndex;
-            index >= 0 && index < visibleResult.length;
-            index += step
-        ) {
-            if (visibleResult[index].id !== exitData.id) {
-                break;
-            }
-
-            visibleConsecutiveCellCount++;
-        }
-
-        return Math.max(
-            0,
-            cellSpan - visibleConsecutiveCellCount,
-        );
-    }
-
-    private getMoveInterval(): number {
-        return this._timing?.moveInterval ?? 0;
-    }
 }

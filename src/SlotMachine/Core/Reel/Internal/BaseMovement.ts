@@ -1,3 +1,8 @@
+import {
+    assertFiniteNumber,
+    assertNonNegativeFiniteNumber,
+} from "../../Internal/NumberAssert";
+
 /**
  * 單一數值軸的移動指令執行器。
  *
@@ -76,7 +81,7 @@ export class BaseMovement {
     public onQueueComplete?: () => void;
 
     public constructor(initialValue = 0) {
-        this.assertFiniteNumber(initialValue, "initialValue");
+        assertFiniteNumber(initialValue, "initialValue");
         this._value = initialValue;
     }
 
@@ -153,7 +158,7 @@ export class BaseMovement {
 
     /** 直接設定目前值，不建立 Movement 指令。 */
     public setValue(value: number): void {
-        this.assertFiniteNumber(value, "value");
+        assertFiniteNumber(value, "value");
         this.applyValue(value);
     }
 
@@ -163,8 +168,8 @@ export class BaseMovement {
         duration: number,
         easing: MovementEasing = BaseMovement.linear,
     ): void {
-        this.assertFiniteNumber(destination, "destination");
-        this.assertDuration(duration);
+        assertFiniteNumber(destination, "destination");
+        assertNonNegativeFiniteNumber(duration, "duration");
 
         this._commands.push({
             type: MovementCommandType.MoveTo,
@@ -184,8 +189,8 @@ export class BaseMovement {
         duration: number,
         easing: MovementEasing = BaseMovement.linear,
     ): void {
-        this.assertFiniteNumber(offset, "offset");
-        this.assertDuration(duration);
+        assertFiniteNumber(offset, "offset");
+        assertNonNegativeFiniteNumber(duration, "duration");
 
         this._commands.push({
             type: MovementCommandType.MoveBy,
@@ -318,17 +323,5 @@ export class BaseMovement {
     private applyValue(value: number): void {
         this._value = value;
         this.onValueChanged?.(value);
-    }
-
-    private assertDuration(duration: number): void {
-        if (!Number.isFinite(duration) || duration < 0) {
-            throw new Error("duration must be a non-negative finite number.");
-        }
-    }
-
-    private assertFiniteNumber(value: number, label: string): void {
-        if (!Number.isFinite(value)) {
-            throw new Error(`${label} must be a finite number.`);
-        }
     }
 }

@@ -1,4 +1,5 @@
 import { SymbolData } from "../Data/SymbolData";
+import { assertNonNegativeInteger } from "../../Internal/NumberAssert";
 
 /**
  * Reel 單輪資料列表。
@@ -74,7 +75,7 @@ export class ReelDataList {
      * 超出剩餘範圍時回傳 undefined。
      */
     public peek(offset = 0): SymbolData | undefined {
-        this.assertNonNegativeInteger(offset, "offset");
+        assertNonNegativeInteger(offset, "offset");
         return this._data[this._readIndex + offset];
     }
 
@@ -88,7 +89,7 @@ export class ReelDataList {
             return this.remainingData;
         }
 
-        this.assertNonNegativeInteger(count, "count");
+        assertNonNegativeInteger(count, "count");
         return this._data.slice(
             this._readIndex,
             this._readIndex + count,
@@ -116,7 +117,7 @@ export class ReelDataList {
      * 實際略過量不會超過剩餘資料筆數，回傳值可供 BaseReel 驗證急停處理結果。
      */
     public skip(count: number): number {
-        this.assertNonNegativeInteger(count, "count");
+        assertNonNegativeInteger(count, "count");
 
         const actualCount = Math.min(count, this.remainingCount);
         this._readIndex += actualCount;
@@ -133,35 +134,16 @@ export class ReelDataList {
         this._readIndex = 0;
     }
 
+    /**
+     * 只擋 null／undefined。
+     *
+     * `visualSize` 的數值檢查由 ReelIconManager.validateData() 負責 ——
+     * 那一層才認識 Registry，錯誤訊息也帶得出呼叫端的 label。這裡是
+     * 純容器，資料格式不歸它管。
+     */
     private validateData(data: SymbolData): void {
         if (data === null || data === undefined) {
             throw new Error("SymbolData is required.");
-        }
-
-        if (data.visualSize !== undefined) {
-            this.assertPositiveFiniteNumber(
-                data.visualSize.width,
-                "SymbolData.visualSize.width",
-            );
-            this.assertPositiveFiniteNumber(
-                data.visualSize.height,
-                "SymbolData.visualSize.height",
-            );
-        }
-    }
-
-    private assertNonNegativeInteger(value: number, label: string): void {
-        if (!Number.isInteger(value) || value < 0) {
-            throw new Error(`${label} must be a non-negative integer.`);
-        }
-    }
-
-    private assertPositiveFiniteNumber(
-        value: number,
-        label: string,
-    ): void {
-        if (!Number.isFinite(value) || value <= 0) {
-            throw new Error(`${label} must be a positive finite number.`);
         }
     }
 }

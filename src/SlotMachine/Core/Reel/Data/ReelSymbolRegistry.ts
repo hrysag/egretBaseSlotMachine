@@ -72,6 +72,30 @@ export class ReelSymbolRegistry {
         return this._displayPriorities.get(symbolId) ?? 0;
     }
 
+    /**
+     * 目前已註冊的最大 cellSpan。
+     *
+     * BaseReel 用它決定進場／退場 buffer 各要幾格：整組必須能完整
+     * 容納在 buffer 內，玩家才不會看到 group 組裝到一半的樣子。
+     *
+     * 多軸情境建議由 Config 明寫 maxCellSpan 覆蓋此值 —— 否則某一軸
+     * 的牌庫剛好沒有大牌時，該軸的 strip 會比其他軸短，Turbo 同步
+     * 停輪的幾何前提就不成立。
+     *
+     * 尚未註冊任何 Symbol 時回傳 1。
+     */
+    public getMaxCellSpan(): number {
+        let maxCellSpan = 1;
+
+        this._cellSpans.forEach((cellSpan) => {
+            if (cellSpan > maxCellSpan) {
+                maxCellSpan = cellSpan;
+            }
+        });
+
+        return maxCellSpan;
+    }
+
     public clear(): void {
         this._cellSpans.clear();
         this._displayPriorities.clear();
