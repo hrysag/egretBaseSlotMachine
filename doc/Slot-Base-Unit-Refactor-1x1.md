@@ -3,6 +3,8 @@
 > 對象：`D:\cocosTest\NewSlotMachine\SlotFrameWork\SlotMachine\assets\Script\SlotMachine\Core`（Cocos 完成版）
 > 目的：移植到 Egret 的同時，把「Runtime = 1×N Symbol」改成「Runtime = 1×1 Cell」。
 > 姊妹文件：[Cocos-To-Egret-Slot-Port-Map.md](Cocos-To-Egret-Slot-Port-Map.md)、[Egret-Slot-Exml-Editable-Surface.md](Egret-Slot-Exml-Editable-Surface.md)、[ReelTemplate-v3-Reference-Study.md](ReelTemplate-v3-Reference-Study.md)
+> 後續：[Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md) —— 移植完成後的責任重劃與瘦身量測，決議 21 起編號於該文
+> 執行期：[Core-Runtime-Flow.md](Core-Runtime-Flow.md) —— 從心跳到停輪的實際路徑流程圖
 > 本文行號以 Cocos 完成版為準。
 
 ---
@@ -340,32 +342,37 @@ export interface ReelSymbolRuntime {
     data: SymbolData;
     groupOffset: number;       // 我離 head 幾格（0 = head）
     resultSpinId?: number;
-    axisPosition: number;
+    cellOffset: number;        // 掉落式預留，滾動期恆為 0（§2.10）
 }
 ```
 
-C 裡每個 runtime 恆為一格，原欄位值恆等於 1，直接改用同一個位置記 group 內位置。
+C 裡每個 runtime 恆為一格，原 `cellSpan` 欄位值恆等於 1，直接改用同一個位置記 group 內位置。
 **不存 group 總長** —— `reconfigureStoppedLayout()` 允許中途重新註冊 `cellSpan`，存了就會變髒資料。
+`axisPosition` 一併移除，位置改為計算取得（§2.8）。
+
+**`groupOffset` 沿內部陣列方向遞增。** 內部陣列固定是「進場端 → 退場端」，head 在 group 的進場側，所以同一組讀起來是 `0(head), 1, 2 …`，與 `resolveGroupOffset()` 的「鄰居 − 1」方向一致。
+
+> 實作時踩過一次：初始展開若寫成 `cellSpan - 1 - offset` 方向就反了，與 handoff 推導對不上。
 
 **改 `ReelLayoutSource`（`:8-20`）**
 
 ```ts
 // before
 export interface ReelLayoutSource {
-    readonly topBuffer: SymbolData;       // 一張
+    readonly topBuffer: SymbolData;        // 一張
     readonly visible: SymbolData[];
-    readonly bottomBuffer: SymbolData;    // 一張
+    readonly bottomBuffer: SymbolData;     // 一張
 }
 
 // after
 export interface ReelLayoutSource {
-    readonly entryBuffer: SymbolData[];   // 展開後 === maxSpan
+    readonly entryBuffer: SymbolData[];   // 展開後 === maxCellSpan
     readonly visible: SymbolData[];       // 展開後 === visibleCellCount
-    readonly exitBuffer: SymbolData[];    // 展開後 === maxSpan
+    readonly exitBuffer: SymbolData[];    // 展開後 === maxCellSpan
 }
 ```
 
-順便改掉 `topBuffer`／`bottomBuffer` 這兩個在水平或反向滾動時會誤導人的名字。
+三段都以**資料流方向**（進場端 → 退場端）排列。順便改掉 `topBuffer`／`bottomBuffer` 這兩個在水平或反向滾動時會誤導人的名字。
 
 **約束：手寫初始盤面不允許大 Symbol 跨越 buffer／顯示區邊界**，三段各自獨立驗證。截斷盤面只有一個來源 —— 上一輪滾出來的結果，那是框架自己產生並保存在 runtime 上的，不經過 `setInitialLayout()`。
 
@@ -628,11 +635,18 @@ export interface ReelEffectConfig {
 | | `canProjectionHandoff()`（`:934`） | 16 |
 | | `isProjectionAligned()`（`:950`） | 50 |
 | `ReelDataFlow.ts` | `collapseResultCellData()`（`:328`） | 27 |
-| | `takeDataByCellBudget()`（`:355`） | 45 |
-| | `takeNextPerformanceDataThatFits()`（`:400`） | 27 |
-| | `takeNextSingleCellPerformanceData()`（`:427`）→ 併入通用收尾 | 24 |
+| | ~~`takeDataByCellBudget()`（`:355`）~~ ※ | 45 |
+| | ~~`takeNextPerformanceDataThatFits()`（`:400`）~~ ※ | 27 |
+| | ~~`takeNextSingleCellPerformanceData()`（`:427`）~~ ※ | 24 |
 | `ReelStopFlow.ts` | 奇偶修正 + 兩個死碼函式 | ~50 |
 | `BaseSlotMachine.ts` | 半格差 throw + 相關分支 | ~20 |
+
+> ※ **本表與 §3.5 曾經矛盾，以 §3.5 為準。** 這三個裝箱函式**不刪**，
+> §3.5「裝箱收尾（保留但降級）」才是定案：停輪時間仍需湊到精確 cell 數，
+> 策略不變（塞到放不下為止，尾巴用 1×1 補滿），牌庫至少要有一張 1×1。
+> 實作結果是 96 行縮到 54 行並改名；後續又把前兩者合併為單一的
+> `takeNextPerformanceSymbol(accepts, …)`（見 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md) §3.1）。
+> 差別只在：改完之後裝箱失敗只影響**表演牌的長相**，時間永遠精確。
 
 小計約 **440 行**，且都是最難推理、最難驗證的部分（含兩個 1000 步模擬迴圈）。
 
@@ -650,6 +664,29 @@ export interface ReelEffectConfig {
 ---
 
 ## 5. 驗證計畫
+
+### 5.0 執行方式
+
+不必 `egret build`、不用開瀏覽器，直接編譯成 CommonJS 用 node 執行：
+
+```bash
+tsc --module commonjs --target es2017 --outDir temp/tests --skipLibCheck \
+    tests/CoreGeometry.test.ts \
+    libs/modules/egret/egret.d.ts \
+    libs/modules/eui/eui.d.ts
+
+node temp/tests/tests/CoreGeometry.test.js
+```
+
+**型別檢查用真正的 `.d.ts`，執行期用 stub。** 階段 6 之後 `BaseReelIcon extends eui.Component`，node 下沒有這個全域，因此 `tests/EgretStub.ts` 補上最小替身（位置、尺寸、錨點、子項管理）並且必須是測試檔的**第一個 import** —— `class X extends eui.Component` 在模組載入當下就求值。
+
+由於型別仍以真正的 `.d.ts` 為準，stub 少實作的成員不會被誤用而無聲通過。
+
+> Cocos 版當初的 Phase 4 verification 用的是同一套手法，只是 stub 的對象是 `cc`。
+
+**執行結果**：56 項斷言全數通過（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過），涵蓋下列第 1～3 項與部分第 6 項。
+
+
 
 建議照 Port Map §10 的順序，在**還沒接 Egret 顯示**之前就用純 TS 斷言驗完幾何：
 
@@ -671,6 +708,7 @@ export interface ReelEffectConfig {
 - **大 Symbol 的中獎動畫／handoff**：目前只確定 `getGroupIcons()` 這個 on-demand 入口，實際動畫要掛在 head 還是另開 overlay 層沒討論。
 - **退場端截斷**：`groupOffset` 表達得出來（X 側最外格 offset > 0），但從 server per-cell 陣列推導不出來。若企劃的 `setInitialLayout()` 或 `reconfigureStoppedLayout()` 需要直接指定這種盤面，要另外開 API。
 - **Icon 數量對 Egret 的影響**：strip 從 `visible + 2` 變成 `visible + 2 × maxSpan`；Egret 沒有內建 Pool（見 Port Map §11），5 軸 × 11 格 = 55 個顯示物件要實測。
+- **`ReelLayoutSource` 的排列順序約定**：目前沿用 Cocos 版的資料流方向（進場端 → 退場端），實務上沒出過問題。曾評估改成畫面閱讀順序（與 Server 結果一致、企劃不必考慮滾動方向，欄位須改名 `leadingBuffer` / `trailingBuffer`，並由 `BaseReel` 做三段對調＋各自反轉的轉換），**暫不採用**，需要時再調整。
 - **掉落式（Drop）本身不在本次範圍**：位置模型已預留 `cellOffset[k]`（§2.10），但 `reorderDropIcon()` 的分組重排、`DropType` 狀態機、每格各自的 `BaseMovement[]` 全部尚未設計。
 - **`tsconfig.json` 的 `lib` 與 `tslib`**：搬遷前必須先決定，否則純 TS 檔編不過。詳見 §7。
 - **搬遷順序（階段 0～9）尚未寫入本文件**，等 §7 的兩個決定拍板後再補。
