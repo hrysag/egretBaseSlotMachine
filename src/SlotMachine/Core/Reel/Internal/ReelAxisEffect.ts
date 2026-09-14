@@ -79,10 +79,12 @@ export class ReelAxisEffect {
         this._distance = config.distance;
         this._outwardDuration = config.outwardDuration;
         this._returnDuration = config.returnDuration;
-        this._outwardEasing =
-            config.outwardEasing ?? ReelEffectEasing.CubicOut;
-        this._returnEasing =
-            config.returnEasing ?? ReelEffectEasing.Linear;
+        this._outwardEasing = config.outwardEasing !== undefined
+            ? config.outwardEasing
+            : ReelEffectEasing.CubicOut;
+        this._returnEasing = config.returnEasing !== undefined
+            ? config.returnEasing
+            : ReelEffectEasing.Linear;
 
         this.resolveEasing(this._outwardEasing);
         this.resolveEasing(this._returnEasing);
@@ -179,39 +181,59 @@ export class ReelAxisEffect {
         return resolved;
     }
 
+    /**
+     * Easing 對照表。
+     *
+     * **鍵刻意寫成字面值，不用 `[ReelEffectEasing.X]` 的 computed key。**
+     * 引擎自帶的編譯器（typescript-plus 2.4.2，`egret clean` 會用到）
+     * 不會把列舉成員當 computed key 時窄化成字面值鍵，整個物件會被推成
+     * `{ [x: string]: MovementEasing }`，於是對不上 `Record<...>`：
+     *
+     * ```text
+     * ReelAxisEffect.ts (184,5): Property 'Linear' is missing in type
+     *   '{ [x: string]: (progress: number) => number; }'.
+     * ```
+     *
+     * 寫成字面值鍵之後兩個編譯器都過，而且 `Record<ReelEffectEasing, …>`
+     * 的**完整性檢查仍然有效** —— 往 ReelEffectEasing 加一個成員卻忘了
+     * 在這裡補對應的 easing，編譯就會失敗。
+     *
+     * 代價是鍵不再語法上綁著列舉：改動 ReelEffectEasing 的**字串值**時
+     * 必須同步改這裡（改成員名稱則會被編譯器擋下）。
+     */
     private readonly _easingMap: Readonly<
         Record<ReelEffectEasing, MovementEasing>
     > = {
-        [ReelEffectEasing.Linear]: BaseMovement.linear,
-        [ReelEffectEasing.QuadIn]: (progress) =>
+        Linear: BaseMovement.linear,
+        QuadIn: (progress) =>
             progress * progress,
-        [ReelEffectEasing.QuadOut]: (progress) =>
+        QuadOut: (progress) =>
             1 - (1 - progress) * (1 - progress),
-        [ReelEffectEasing.QuadInOut]: (progress) =>
+        QuadInOut: (progress) =>
             progress < 0.5
                 ? 2 * progress * progress
                 : 1 - Math.pow(-2 * progress + 2, 2) / 2,
-        [ReelEffectEasing.CubicIn]: (progress) =>
+        CubicIn: (progress) =>
             progress * progress * progress,
-        [ReelEffectEasing.CubicOut]: (progress) =>
+        CubicOut: (progress) =>
             1 - Math.pow(1 - progress, 3),
-        [ReelEffectEasing.CubicInOut]: (progress) =>
+        CubicInOut: (progress) =>
             progress < 0.5
                 ? 4 * progress * progress * progress
                 : 1 - Math.pow(-2 * progress + 2, 3) / 2,
-        [ReelEffectEasing.SineIn]: (progress) =>
+        SineIn: (progress) =>
             1 - Math.cos(progress * Math.PI / 2),
-        [ReelEffectEasing.SineOut]: (progress) =>
+        SineOut: (progress) =>
             Math.sin(progress * Math.PI / 2),
-        [ReelEffectEasing.SineInOut]: (progress) =>
+        SineInOut: (progress) =>
             -(Math.cos(Math.PI * progress) - 1) / 2,
-        [ReelEffectEasing.BackIn]: (progress) => {
+        BackIn: (progress) => {
             const overshoot = 1.70158;
             return (overshoot + 1)
                 * progress * progress * progress
                 - overshoot * progress * progress;
         },
-        [ReelEffectEasing.BackOut]: (progress) => {
+        BackOut: (progress) => {
             const overshoot = 1.70158;
             const shifted = progress - 1;
             return 1

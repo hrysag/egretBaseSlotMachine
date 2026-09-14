@@ -33,20 +33,24 @@ import {
     assertPositiveInteger,
 } from "../Internal/NumberAssert";
 
-export type { ReelLayoutSource, ReelSymbolRuntime } from "./Data/ReelData";
-export type { SymbolData, SymbolVisualSize } from "./Data/SymbolData";
-export type { ReelSymbolCellDefinition } from "./Data/ReelSymbolRegistry";
+export { ReelLayoutSource, ReelSymbolRuntime } from "./Data/ReelData";
+export { SymbolData, SymbolVisualSize } from "./Data/SymbolData";
+export { ReelSymbolCellDefinition } from "./Data/ReelSymbolRegistry";
 export { ReelExpediteReason } from "./Runtime/ReelStopPlan";
-export type { ReelStopPlan, ReelStopPlanInput } from "./Runtime/ReelStopPlan";
+export { ReelStopPlan, ReelStopPlanInput } from "./Runtime/ReelStopPlan";
 
 /**
  * 可直接使用、也允許遊戲端繼承的單軸 Reel。
  *
  * ## 與 Cocos 版的三個結構差異
  *
- * 1. **不是 Component。** Egret 沒有 Component 機制，本類別是普通 class，
- *    持有一個 Icon 容器；每幀由上層呼叫 `updateMovement(deltaTime)`。
- *    Cocos 版的 `ReelUpdateMode.Self` 沒有對應物，已移除。
+ * 1. **自己就是顯示節點。** Cocos 的 `Component` 是被 `new` 出來再由
+ *    外部塞 `node`，載體是 Node 不是 Component；Egret 把兩者合一，
+ *    所以本類別直接 `extends eui.Component`，Icon 空殼掛在 `this`
+ *    底下 —— 對應 Cocos 版 `iconContainer` 預設值就是 `this.node`。
+ *    沒有對應物的只有「掛在節點上的腳本」這一面：`update()` 不存在，
+ *    每幀由 `BaseSlotMachine` 統一呼叫 `updateMovement(deltaTime)`，
+ *    Cocos 版的 `ReelUpdateMode.Self` 已移除。
  * 2. **Runtime 恆為 1×1。** 大於一格的 Symbol 由連續 N 格組成一個 group，
  *    以 `groupOffset` 表示組內位置，head 在進場側。
  * 3. **位置用算的。** 整軸只保存一個 `stripOffset`（由 Movement 的值取模
@@ -80,7 +84,7 @@ export type { ReelStopPlan, ReelStopPlanInput } from "./Runtime/ReelStopPlan";
  * 欄位與 handler → 建立 → 滾動資料與時間 → **主線** → 急停與即停
  * → 查詢 → 等待／重設／釋放 → 零件。
  */
-export class BaseReel {
+export class BaseReel extends eui.Component {
     private _inited = false;
 
     private _moveInterval = 0;
@@ -154,7 +158,9 @@ export class BaseReel {
 
     /** 第一個半 Cell 完成：只通知，不交接也不停止。 */
     private readonly _firstHalfCompleteHandler = (): void => {
-        this.onHalfCellComplete?.(1);
+        if (this.onHalfCellComplete !== undefined) {
+            this.onHalfCellComplete(1);
+        }
     };
 
     /**
@@ -170,8 +176,12 @@ export class BaseReel {
     private readonly _secondHalfCompleteHandler = (): void => {
         this.tryCommitResultAtBoundary();
         this.drainPendingHandoffs();
-        this.onHalfCellComplete?.(2);
-        this.onCellMovementComplete?.();
+        if (this.onHalfCellComplete !== undefined) {
+            this.onHalfCellComplete(2);
+        }
+        if (this.onCellMovementComplete !== undefined) {
+            this.onCellMovementComplete();
+        }
 
         if (!this.tryCompleteStop()) {
             this.queueOneCellMovement(this._moveInterval);
@@ -235,10 +245,15 @@ export class BaseReel {
         );
         assertPositiveFiniteNumber(config.cellSize, "cellSize");
 
-        const cellSpacing = config.cellSpacing ?? 0;
-        const alignmentEpsilon = config.alignmentEpsilon ?? 0.0001;
-        const maxCellSpan =
-            config.maxCellSpan ?? this._symbolRegistry.getMaxCellSpan();
+        const cellSpacing = config.cellSpacing !== undefined
+            ? config.cellSpacing
+            : 0;
+        const alignmentEpsilon = config.alignmentEpsilon !== undefined
+            ? config.alignmentEpsilon
+            : 0.0001;
+        const maxCellSpan = config.maxCellSpan !== undefined
+            ? config.maxCellSpan
+            : this._symbolRegistry.getMaxCellSpan();
 
         assertNonNegativeFiniteNumber(cellSpacing, "cellSpacing");
         assertNonNegativeFiniteNumber(
@@ -270,7 +285,9 @@ export class BaseReel {
             );
         }
 
-        this._moveInterval = config.moveInterval ?? 0;
+        this._moveInterval = config.moveInterval !== undefined
+            ? config.moveInterval
+            : 0;
         this._startEffect.configure(config.startEffect);
         this._stopEffect.configure(config.stopEffect);
     }
@@ -340,7 +357,14 @@ export class BaseReel {
         this.setInitialLayout(source);
     }
 
-    /** 建立 Icon 載體並綁定容器。 */
+    /**
+     * 用 config 的建構器建立 Icon 載體，並掛到自己底下。
+     *
+     * 載體數量固定 = `stripCellCount`，建立後滾動期不再增刪；
+     * 美術是載體另外接收的東西，不從這裡進來。
+     * 必須在 `setInitialLayout()` 之後呼叫 —— 目前的建立迴圈跑的是
+     * 已展開的 strip 長度。
+     */
     public configureIconDisplay(config: ReelIconDisplayConfig): void {
         this.assertInitialized();
 
@@ -350,13 +374,10 @@ export class BaseReel {
             );
         }
 
-        this._iconManager.initializeIcons(
-            config.container,
-            config.iconFactory,
-        );
+        this._iconManager.initializeIcons(this, config.iconFactory);
     }
 
-    /** 移除 Icon 載體，保留純數值 strip。 */
+    /** 移除 Icon 空殼，保留純數值 strip。 */
     public clearIconDisplay(): void {
         if (this.isActive()) {
             throw new Error(
@@ -524,7 +545,9 @@ export class BaseReel {
 
     private beginFirstCellMovement(): void {
         this.queueOneCellMovement(this._moveInterval);
-        this.onRollStarted?.();
+        if (this.onRollStarted !== undefined) {
+            this.onRollStarted();
+        }
     }
 
     /**
@@ -538,7 +561,21 @@ export class BaseReel {
         const replaceable =
             this._iconManager.getReplaceableEntryRuntimes();
 
-        for (const runtime of replaceable) {
+        /*
+         * **必須從退場端往進場端綁**（也就是把 getReplaceableEntryRuntimes()
+         * 的回傳倒過來走）。兩個理由，缺一不可：
+         *
+         * 1. rebindEntryRuntime() 依 _symbols[index + 1]（朝退場方向的鄰居）
+         *    推導 groupOffset。由外往內綁時那個鄰居還是上一輪的舊資料，
+         *    推出來的 offset 無效 —— 實測會產生 [1/0, 62/1, 62/1] 這種
+         *    「兩個 follower 都沒有 head」的組，該格永遠不繪製，
+         *    捲進顯示區就是一個空格。
+         *
+         * 2. 正常交接是每格塞進 index 0、把既有的往退場端推，所以**先消耗
+         *    的資料本來就該落在較靠退場端的格**。倒著綁才與交接順序一致。
+         */
+        for (let i = replaceable.length - 1; i >= 0; i--) {
+            const runtime = replaceable[i];
             const consumed = this.consumeNextData();
 
             if (consumed === undefined) {
@@ -551,7 +588,9 @@ export class BaseReel {
                 runtime,
                 consumed.data,
             );
-            this.onReelDataChanged?.(runtime, previousData);
+            if (this.onReelDataChanged !== undefined) {
+                this.onReelDataChanged(runtime, previousData);
+            }
         }
 
         this._iconManager.syncAllIcons();
@@ -599,7 +638,9 @@ export class BaseReel {
             this._waitingForStartEffect = false;
 
             try {
-                this.onStartEffectCompleted?.();
+                if (this.onStartEffectCompleted !== undefined) {
+                    this.onStartEffectCompleted();
+                }
             } finally {
                 this.beginFirstCellMovement();
             }
@@ -607,7 +648,9 @@ export class BaseReel {
 
         if (stopEffectCompleted) {
             this.syncVisualEffectOffset();
-            this.onStopEffectCompleted?.();
+            if (this.onStopEffectCompleted !== undefined) {
+                this.onStopEffectCompleted();
+            }
         }
 
         this._movement.update(deltaTime);
@@ -661,7 +704,48 @@ export class BaseReel {
         this._stopFlow.tryCommitResultAtHandoff(
             this._moveInterval,
             this.calculateResultEntryHalfCellCount(),
+            this.dissolveIncompleteEntryGroup(),
         );
+    }
+
+    /**
+     * 提交結果前，把進場端沒湊滿的那組拆成 1×1。
+     *
+     * 表演牌若是大 Symbol，結果提交的當下它可能只進場了一部分。那組的
+     * head 還沒進來，而正式結果的第一格入列時 `resolveGroupOffset()`
+     * 只比對「同 id 且 offset > 0」，同一張牌就會被接進那組裡，整批
+     * groupOffset 跟著錯位（可視區會看到兩組大 Symbol 的碎片）。
+     *
+     * 拆而不是補完，理由是時間：補完要多跑最多 `maxCellSpan - 1` 格，
+     * 而且那幾格繞過 `performanceCellBudget`，急停時停輪時間會失準；
+     * 補完還會把那張本該丟掉的表演牌救活，讓同一張大 Symbol 連出兩次。
+     * 拆掉不花任何行程，而且那幾格必定還在進場 buffer 內，沒人看過。
+     *
+     * @returns 該組仍留在資料佇列裡的未讀格數，由 commitResult() 一併丟棄
+     */
+    private dissolveIncompleteEntryGroup(): number {
+        const pendingCellCount =
+            this._iconManager.incompleteEntryGroupPendingCellCount;
+
+        if (pendingCellCount === 0) {
+            return 0;
+        }
+
+        const filler = this._dataFlow.takeSingleCellPerformanceSymbol(
+            this._cellSpanResolver,
+            this._performanceDataProvider,
+            this._flowDataValidator,
+        );
+
+        if (filler === undefined) {
+            throw new Error(
+                "Dissolving an incomplete entry group requires "
+                + "at least one 1x1 performance Symbol.",
+            );
+        }
+
+        this._iconManager.dissolveIncompleteEntryGroup(filler);
+        return pendingCellCount;
     }
 
     /**
@@ -671,8 +755,25 @@ export class BaseReel {
      * 處理多格（低幀率時）。
      */
     private drainPendingHandoffs(): void {
+        let handedOff = false;
+
         while (this._iconManager.pendingHandoffCount > 0) {
             this.handoffOneCell();
+            handedOff = true;
+        }
+
+        /*
+         * 交接只旋轉 _symbols，要 syncAllIcons() 才會反映到 Icon 上。
+         *
+         * 滾動期原本靠下一幀的 onValueChanged 補上，但**最後一次交接
+         * 之後沒有下一幀** —— 少了這裡，停止畫面會永遠停在交接前的狀態：
+         * head 不顯示、follower 反而顯示，且 head 的圖高度停留在上一張
+         * Symbol 的 cellSpan。階段 9a 在瀏覽器實測到這個現象。
+         *
+         * 滾動期也一樣受益：每個 Cell 邊界少掉一幀的錯誤畫面。
+         */
+        if (handedOff) {
+            this._iconManager.syncAllIcons();
         }
     }
 
@@ -694,7 +795,9 @@ export class BaseReel {
                 consumed.data,
                 consumed.resultSpinId,
             );
-        this.onReelDataChanged?.(runtime, previousData);
+        if (this.onReelDataChanged !== undefined) {
+            this.onReelDataChanged(runtime, previousData);
+        }
     }
 
     private consumeNextData(): ReelConsumedData | undefined {
@@ -808,11 +911,15 @@ export class BaseReel {
             && this._stopEffect.start(1, this._effectTimeScale)
         ) {
             this.syncVisualEffectOffset();
-            this.onStopEffectStarted?.();
+            if (this.onStopEffectStarted !== undefined) {
+                this.onStopEffectStarted();
+            }
         }
 
         try {
-            this.onRollStopped?.(this._stopMode);
+            if (this.onRollStopped !== undefined) {
+                this.onRollStopped(this._stopMode);
+            }
         } finally {
             this.resolveStopPromise();
         }
@@ -1013,7 +1120,24 @@ export class BaseReel {
         return this._dataFlow.dataList;
     }
 
-    /** 內部順序固定為「進場端 → 退場端」。 */
+    /**
+     * 內部順序固定為「進場端 → 退場端」。
+     *
+     * ## 排錯時怎麼讀 `groupOffset`
+     *
+     * 逐格印出 `groupOffset` 是最快的診斷手段。讀法只有一條規則：
+     * **每遇到一個 `0` 就是一組的開始，後面連著遞增的數字都是它的
+     * follower**（`0,1,2` = 一張 1×3、`0,1` = 一張 1×2、單獨的 `0`
+     * = 1×1 或只剩 head 的大牌，後者要配 id 才分得出來）。
+     *
+     * 可視段是 `firstVisibleIndex` 起算 `visibleCellCount` 格，
+     * **必須自成完整的組**。可視段長成 `1,2,0` 這種形狀就是錯位：
+     * 前兩格是 head 在顯示區外那組的 follower，第三格是另一組的 head。
+     * follower 不畫圖，所以孤兒 follower 在畫面上是**空格**。
+     *
+     * 完整對照表與實例見
+     * `doc/Slot-Base-Unit-Refactor-1x1.md` §2.2.1。
+     */
     public get symbols(): ReelSymbolRuntime[] {
         return this._iconManager.symbols;
     }
@@ -1082,7 +1206,9 @@ export class BaseReel {
         const resolve = this._resolveStopPromise;
         this._resolveStopPromise = undefined;
         this._stopPromise = undefined;
-        resolve?.();
+        if (resolve !== undefined) {
+            resolve();
+        }
     }
 
     private resetMovement(): void {

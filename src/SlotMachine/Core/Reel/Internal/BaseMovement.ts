@@ -250,7 +250,9 @@ export class BaseMovement {
 
                 if (next.type === MovementCommandType.Callback) {
                     next.callback(this);
-                    this.onCommandComplete?.(MovementCommandType.Callback);
+                    if (this.onCommandComplete !== undefined) {
+                        this.onCommandComplete(MovementCommandType.Callback);
+                    }
                     continue;
                 }
 
@@ -296,7 +298,9 @@ export class BaseMovement {
             this.applyValue(active.endValue);
             const completedType = active.command.type;
             this._activeMove = undefined;
-            this.onCommandComplete?.(completedType);
+            if (this.onCommandComplete !== undefined) {
+                this.onCommandComplete(completedType);
+            }
 
             if (remainingTime <= 0 && this._commands.length > 0) {
                 /**
@@ -312,7 +316,9 @@ export class BaseMovement {
         }
 
         if (queueWasActive && this.isIdle) {
-            this.onQueueComplete?.();
+            if (this.onQueueComplete !== undefined) {
+                this.onQueueComplete();
+            }
         }
     }
 
@@ -322,6 +328,8 @@ export class BaseMovement {
 
     private applyValue(value: number): void {
         this._value = value;
-        this.onValueChanged?.(value);
+        if (this.onValueChanged !== undefined) {
+            this.onValueChanged(value);
+        }
     }
 }

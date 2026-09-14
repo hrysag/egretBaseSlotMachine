@@ -236,7 +236,9 @@ export class BaseSlotMachine {
             reelIndexes,
         );
 
-        const effectTimeScale = config.effectTimeScale ?? 1;
+        const effectTimeScale = config.effectTimeScale !== undefined
+            ? config.effectTimeScale
+            : 1;
 
         for (const reelIndex of this._activeReelIndexes) {
             this._runtimeReels[reelIndex].setEffectTimeScale(
@@ -298,7 +300,9 @@ export class BaseSlotMachine {
         ) {
             const resolve = this._resolveAllStarted;
             this._resolveAllStarted = undefined;
-            this.onAllReelsStarted?.();
+            if (this.onAllReelsStarted !== undefined) {
+                this.onAllReelsStarted();
+            }
             resolve();
         }
     }
@@ -316,7 +320,9 @@ export class BaseSlotMachine {
             reel.requestQuickStop();
         }
 
-        this.onReelStarted?.(timing.reelIndex, reel);
+        if (this.onReelStarted !== undefined) {
+            this.onReelStarted(timing.reelIndex, reel);
+        }
     }
 
     /** 啟用 AutoSpin 並開始第一輪。 */
@@ -384,7 +390,8 @@ export class BaseSlotMachine {
 
             if (
                 this._quickStopRequested
-                && this._currentSpinConfig?.fastMode === true
+                && this._currentSpinConfig !== undefined
+                && this._currentSpinConfig.fastMode === true
             ) {
                 this.prepareFastQuickStopPadding();
             }
@@ -427,7 +434,8 @@ export class BaseSlotMachine {
         }
 
         if (
-            this._currentSpinConfig?.fastMode === true
+            this._currentSpinConfig !== undefined
+            && this._currentSpinConfig.fastMode === true
             && this._currentResultByReel !== undefined
         ) {
             this.prepareFastQuickStopPadding();
@@ -635,7 +643,9 @@ export class BaseSlotMachine {
             return;
         }
 
-        this.onReelStopped?.(reelIndex, reel, reel.stopMode);
+        if (this.onReelStopped !== undefined) {
+            this.onReelStopped(reelIndex, reel, reel.stopMode);
+        }
     }
 
     private async waitForImmediateStop(
@@ -667,7 +677,9 @@ export class BaseSlotMachine {
         this._pendingStarts = [];
         this._spinElapsed = 0;
         this._startPromise = undefined;
-        this.onAllReelsStopped?.();
+        if (this.onAllReelsStopped !== undefined) {
+            this.onAllReelsStopped();
+        }
         await this.startNextAutoSpinIfNeeded();
     }
 
@@ -788,11 +800,15 @@ export class BaseSlotMachine {
         reel.setActiveMoveInterval(
             timing.moveIntervalSeconds / listenConfig.speedMultiplier,
         );
-        this.onListenStart?.(timing.reelIndex, reel);
+        if (this.onListenStart !== undefined) {
+            this.onListenStart(timing.reelIndex, reel);
+        }
         await reel.waitForStoppedAsync();
 
         if (this._inited) {
-            this.onListenEnd?.(timing.reelIndex, reel);
+            if (this.onListenEnd !== undefined) {
+                this.onListenEnd(timing.reelIndex, reel);
+            }
         }
     }
 

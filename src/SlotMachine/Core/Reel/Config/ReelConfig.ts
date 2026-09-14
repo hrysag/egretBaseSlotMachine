@@ -8,20 +8,17 @@ export type ReelIconFactory = () => BaseReelIcon;
 /**
  * 單軸 Icon 顯示設定。
  *
- * Cocos 版是 `prefab` + `container`；Egret 沒有 Prefab，改成由遊戲
- * 提供一個建構器。要用 exml 編排 Symbol 外觀時，在建構器內建立
- * 繼承 BaseReelIcon 的類別並指定 `skinName` 即可。
+ * 對應 Cocos 版 `ReelIconDisplayConfig.prefab`：那裡註明「Reel 固定
+ * 建立的外層**載體** Prefab，根節點必須掛有 BaseReelIcon」，並特地
+ * 聲明 Sprite／Spine／Animation 等 **Symbol 美術**由載體另外接收，
+ * 不走這個欄位。Egret 沒有 Prefab，載體改由建構器提供，但「載體與
+ * 美術是兩個注入點」這件事不變。
+ *
+ * Cocos 版的 `container` 已經不需要 —— BaseReel 本身就是
+ * eui.Component，Icon 直接掛在自己底下（Cocos 那邊的預設值也是
+ * `this.node`）。
  */
 export interface ReelIconDisplayConfig {
-    /**
-     * Icon 的父容器。
-     *
-     * 建議使用普通的 egret.DisplayObjectContainer；若直接傳 eui.Group，
-     * 每次子項增刪與 setChildIndex 都會觸發 invalidateSize() 與
-     * invalidateDisplayList()，滾輪每格都要重排，成本會累積。
-     */
-    readonly container: egret.DisplayObjectContainer;
-
     /** 建立單一 Icon 載體；會被呼叫 stripCellCount 次。 */
     readonly iconFactory: ReelIconFactory;
 }

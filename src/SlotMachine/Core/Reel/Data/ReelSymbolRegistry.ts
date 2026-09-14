@@ -36,7 +36,9 @@ export class ReelSymbolRegistry {
             }
 
             const displayPriority =
-                definition.displayPriority ?? 0;
+                definition.displayPriority !== undefined
+                    ? definition.displayPriority
+                    : 0;
 
             if (!Number.isInteger(displayPriority)) {
                 throw new Error(
@@ -69,7 +71,8 @@ export class ReelSymbolRegistry {
 
     /** 取得 Symbol 在同一軸 Icon Container 內的顯示排序權重。 */
     public getDisplayPriority(symbolId: number): number {
-        return this._displayPriorities.get(symbolId) ?? 0;
+        const priority = this._displayPriorities.get(symbolId);
+        return priority !== undefined ? priority : 0;
     }
 
     /**

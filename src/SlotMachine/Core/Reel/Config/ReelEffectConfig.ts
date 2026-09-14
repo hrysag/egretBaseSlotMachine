@@ -1,4 +1,4 @@
-import type { ReelEffectEasing } from "./ReelEffectEasing";
+import { ReelEffectEasing } from "./ReelEffectEasing";
 
 /**
  * Reel 的軸向顯示效果設定。

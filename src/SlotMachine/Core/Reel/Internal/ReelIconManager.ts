@@ -255,6 +255,77 @@ export class ReelIconManager {
     }
 
     /**
+     * 進場端那一組還差幾格才湊滿。
+     *
+     * 進場端最外格是最後一個綁到資料的 Cell；它的 `groupOffset` 若還
+     * 大於 0，代表這一組只進了一部分，head 還沒進場。這個數字同時也是
+     * 該組**尚未讀取**的 Cell 數 —— 表演 Symbol 入列時整組展開成連續
+     * Cell，所以缺的那幾格就排在資料佇列最前面。
+     *
+     * 0 表示邊界是乾淨的（上一組已經湊滿）。
+     */
+    public get incompleteEntryGroupPendingCellCount(): number {
+        const entryRuntime = this._symbols[0];
+
+        return entryRuntime === undefined
+            ? 0
+            : entryRuntime.groupOffset;
+    }
+
+    /**
+     * 把進場端那組沒湊滿的 Cell 就地拆成各自獨立的 1×1。
+     *
+     * **為什麼要拆**：正式結果的第一格入列時，`resolveGroupOffset()`
+     * 只看「朝退場方向的鄰居是不是同 id 且 offset > 0」。若邊界留著一組
+     * 沒湊滿的 Symbol，而結果剛好是同一張牌，結果的第一格就會被接進那組
+     * 裡，整批 offset 跟著錯位。拆成 1×1 之後每格 offset 都是 0，結果
+     * 一定開新組。
+     *
+     * **為什麼可以就地改寫**：group 的 span 最多 `maxCellSpan`，進場
+     * buffer 也正好是 `maxCellSpan` 格，所以已進場的部分最多
+     * `maxCellSpan - 1` 格，必定整批還在 buffer 內、還沒進顯示區 ——
+     * 玩家從來沒看過它們。
+     *
+     * @param fillerData 用來取代的 1×1 Symbol
+     * @returns 實際改寫的 Cell 數
+     */
+    public dissolveIncompleteEntryGroup(fillerData: SymbolData): number {
+        const pendingCellCount =
+            this.incompleteEntryGroupPendingCellCount;
+
+        if (pendingCellCount === 0) {
+            return 0;
+        }
+
+        this.validateData(fillerData, "fillerData");
+
+        if (this.getCellSpan(fillerData) !== 1) {
+            throw new Error(
+                "Incomplete entry group can only be dissolved "
+                + "into 1x1 Symbols.",
+            );
+        }
+
+        const entryRuntime = this._symbols[0];
+        const enteredCellCount =
+            this.getCellSpan(entryRuntime.data) - pendingCellCount;
+
+        for (let index = 0; index < enteredCellCount; index++) {
+            const runtime = this._symbols[index];
+
+            if (runtime === undefined) {
+                break;
+            }
+
+            runtime.data = fillerData;
+            runtime.groupOffset = 0;
+            runtime.resultSpinId = undefined;
+        }
+
+        return enteredCellCount;
+    }
+
+    /**
      * 把上一輪留在進場 buffer 的 Runtime 改綁新一輪資料。
      *
      * 只有**整組都在 buffer 內**的格子可以換；跨越 buffer 與顯示區
@@ -499,9 +570,12 @@ export class ReelIconManager {
         layoutType?: ReelIconDirection,
         inverseDirection?: boolean,
     ): void {
-        this._layoutType = layoutType ?? this._layoutType;
-        this._inverseDirection =
-            inverseDirection ?? this._inverseDirection;
+        this._layoutType = layoutType !== undefined
+            ? layoutType
+            : this._layoutType;
+        this._inverseDirection = inverseDirection !== undefined
+            ? inverseDirection
+            : this._inverseDirection;
 
         if (this._icons.length > 0) {
             this.syncAllIcons();
@@ -511,10 +585,10 @@ export class ReelIconManager {
     /**
      * 依目前 strip 長度建立 Icon 載體。
      *
-     * Icon 全部掛在傳入的容器底下。若該容器是 eui.Group，強烈建議
-     * 另外包一層普通的 egret.DisplayObjectContainer 再傳進來 ——
-     * Group 在子項增刪與 setChildIndex 時會觸發 invalidateSize()
-     * 與 invalidateDisplayList()，滾輪每格都要重排層級，成本會累積。
+     * 載體數量固定為 stripCellCount（由 maxCellSpan 決定），建立之後
+     * 滾動期間不再增刪 —— 換的是載體裡的美術內容，不是載體本身。
+     * 容器由 BaseReel 傳入自己（BaseReel 本身就是 eui.Component）；
+     * 載體類別由 iconFactory 決定，對應 Cocos 版的載體 Prefab。
      */
     public initializeIcons(
         container: egret.DisplayObjectContainer,

@@ -106,6 +106,7 @@ export class ReelStopFlow {
     public tryCommitResultAtHandoff(
         moveInterval: number,
         resultEntryHalfCellCount: number,
+        dissolvedEntryGroupCellCount: number,
     ): boolean {
         const visibleResult = this._visibleResult;
         const targetStopTime = this._targetStopTime;
@@ -116,6 +117,20 @@ export class ReelStopFlow {
         ) {
             return false;
         }
+
+        /*
+         * 退場端截斷時要墊在結果前面的格數（ReelDataFlow 的鏡像補格）。
+         * 那幾格比結果更早進場，結果因此多走同樣的格數，行程要先算進來，
+         * 否則停輪時間會短算。
+         */
+        const exitTruncationCellCount =
+            this._dataFlow.countExitTruncationCells(
+                visibleResult,
+                this._reverseResultEntry,
+                this._cellSpanResolver,
+            );
+        const totalResultEntryHalfCellCount =
+            resultEntryHalfCellCount + exitTruncationCellCount * 2;
 
         /*
          * 每格等寬之後相位恆定：提交固定發生在第二個半格結束，
@@ -132,16 +147,18 @@ export class ReelStopFlow {
 
         const directResultStopTime =
             this._elapsedRollTime
-            + resultEntryHalfCellCount * halfCellDuration;
+            + totalResultEntryHalfCellCount * halfCellDuration;
         const performanceCellBudget =
             this._quickStopRequested
-                ? this._quickStopPerformanceCellBudget ?? 0
+                ? (this._quickStopPerformanceCellBudget !== undefined
+                    ? this._quickStopPerformanceCellBudget
+                    : 0)
                 : Math.max(
                     0,
                     Math.floor(
                         (
                             targetRemainingHalfCellCount
-                            - resultEntryHalfCellCount
+                            - totalResultEntryHalfCellCount
                         ) / 2,
                     ),
                 );
@@ -151,6 +168,7 @@ export class ReelStopFlow {
                 this._requiredTail,
                 performanceCellBudget,
                 this._reverseResultEntry,
+                dissolvedEntryGroupCellCount,
                 this._cellSpanResolver,
                 this._performanceDataProvider,
                 this._dataValidator,
