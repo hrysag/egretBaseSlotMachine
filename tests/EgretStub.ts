@@ -82,10 +82,15 @@ class StubRectangle {
     ) {}
 }
 
-const globalScope = globalThis as unknown as {
-    egret?: unknown;
-    eui?: unknown;
-};
+/*
+ * 用 Function 取得全域物件，而不是 globalThis ——
+ * globalThis 是 TS 3.4／ES2020 才有的東西，而本專案的語法基準是
+ * 引擎自帶編譯器 typescript-plus 2.4.2（egret clean 會用到）。
+ * 雖然 tests/ 不在 tsconfig 的 include 裡、不會被 egret 編到，
+ * 但整個專案只維持一套語法標準，才不會有人不小心把它加進來就炸掉。
+ */
+const globalScope: { egret?: any; eui?: any } =
+    (new Function("return this"))();
 
 globalScope.egret = {
     DisplayObject: StubDisplayObject,

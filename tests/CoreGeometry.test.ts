@@ -29,7 +29,7 @@ function group(name: string): void {
     console.log(`\n── ${name}`);
 }
 
-function check(label: string, actual: unknown, expected: unknown): void {
+function check(label: string, actual: any, expected: any): void {
     const a = JSON.stringify(actual);
     const e = JSON.stringify(expected);
 
@@ -405,6 +405,7 @@ group("7. ReelDataFlow.commitResult 的 group 收尾");
         [],
         0,               // 不保留表演 Cell
         true,            // 進場端在畫面開頭 → 結果需反轉成進場順序
+        0,               // 進場端沒有未湊滿的 group
         resolver,
         provider,
         validator,
@@ -426,6 +427,7 @@ group("7. ReelDataFlow.commitResult 的 group 收尾");
         [],
         0,
         true,
+        0,               // 進場端沒有未湊滿的 group
         resolver,
         provider,
         validator,
@@ -445,6 +447,7 @@ group("7. ReelDataFlow.commitResult 的 group 收尾");
         [],
         0,
         true,
+        0,               // 進場端沒有未湊滿的 group
         resolver,
         provider,
         validator,
@@ -490,6 +493,7 @@ group("7c. 依 Cell 預算保留表演資料");
         [],
         5,               // 預算 5 格，但牌庫只剩 3 格 → 不足處由 provider 補
         true,
+        0,               // 進場端沒有未湊滿的 group
         resolver,
         provider,
         validator,
@@ -501,6 +505,346 @@ group("7c. 依 Cell 預算保留表演資料");
         flow.dataList.remainingData.length,
         5 + 3,
     );
+}
+
+// ────────── 7f. 截斷盤面：進場端與退場端都要補 ──────────
+
+/*
+ * head 恆在進場側，所以大 Symbol 進場時 head 最後到（截在進場端），
+ * 出場時 head 最後走（截在退場端）。兩端都是滾動的必經狀態。
+ * 詳見 doc/Slot-Base-Unit-Refactor-1x1.md 決議 4 與 §2.3。
+ */
+group("7f. 截斷盤面：進場端與退場端都要補");
+
+{
+    const registry = createRegistry();
+    const resolver = (data: SymbolData) => registry.getCellSpan(data.id);
+    const validator = () => undefined;
+    const provider = () => symbol(1);
+
+    /** 提交盤面（畫面上→下），回傳整條 strip 對齊後的 id:offset。 */
+    function settle(board: number[]): string[] {
+        const manager = createManager(registry);
+        manager.initialize({
+            entryBuffer: [symbol(1), symbol(1), symbol(1)],
+            visible: [symbol(1), symbol(1), symbol(1)],
+            exitBuffer: [symbol(1), symbol(1), symbol(1)],
+        });
+
+        const flow = new ReelDataFlow();
+        flow.setPerformanceDataBank([symbol(1)], resolver);
+        flow.beginSpin();
+        flow.commitResult(
+            board.map(symbol),
+            [],
+            0,
+            true,
+            0,
+            resolver,
+            provider,
+            validator,
+        );
+
+        const queued = flow.dataList.remainingData.length;
+
+        for (let index = 0; index < queued; index++) {
+            const consumed = flow.consumeNextData(
+                provider,
+                validator,
+                resolver,
+            );
+            manager.recycleExitedCell(consumed.data, consumed.resultSpinId);
+        }
+
+        /*
+         * 全部消耗完之後，最後進場的是進場端補格，它停在 idx0；
+         * 結果的可視段因此落在 idx(補格數) 起算，還差
+         * firstVisibleIndex - 補格數 次回收才會走進可視區。
+         */
+        const exitPad = flow.countExitTruncationCells(
+            board.map(symbol),
+            true,
+            resolver,
+        );
+        const entryPad = queued - board.length - exitPad;
+
+        for (
+            let index = 0;
+            index < manager.firstVisibleIndex - entryPad;
+            index++
+        ) {
+            manager.recycleExitedCellKeepingData();
+        }
+
+        return manager.symbols
+            .slice(
+                manager.firstVisibleIndex,
+                manager.firstVisibleIndex + manager.visibleCellCount,
+            )
+            .map((r) => `${r.data.id}:${r.groupOffset}`);
+    }
+
+    check(
+        "進場端截斷 [7,7,2]：head 在畫面上方外，可視是 offset 1,2",
+        settle([7, 7, 2]),
+        ["7:1", "7:2", "2:0"],
+    );
+    check(
+        "退場端截斷 [1,2,7]：head 在最下一格，身體在畫面下方外",
+        settle([1, 2, 7]),
+        ["1:0", "2:0", "7:0"],
+    );
+    check(
+        "退場端截斷 [2,7,7]：露出 head 與第一個 follower",
+        settle([2, 7, 7]),
+        ["2:0", "7:0", "7:1"],
+    );
+    check(
+        "完整一組 [7,7,7]：兩端都不必補",
+        settle([7, 7, 7]),
+        ["7:0", "7:1", "7:2"],
+    );
+    check(
+        "全 1×1 不受影響",
+        settle([1, 2, 3]),
+        ["1:0", "2:0", "3:0"],
+    );
+}
+
+// ────────── 7e. 預算切資料不得切在 group 中間 ──────────
+
+/*
+ * takePerformanceCellsByBudget() 逐「組」取，不逐格取。
+ * 切一半會在正式結果正前面留下湊不滿的 group（doc §3.5、§6）。
+ */
+group("7e. 預算切資料不得切在 group 中間");
+
+{
+    const registry = createRegistry();
+    const resolver = (data: SymbolData) => registry.getCellSpan(data.id);
+    const validator = () => undefined;
+    const provider = () => symbol(1);
+
+    /** 結果固定是三張 1×1，所以佇列末三格恆為 [1,1,1]。 */
+    function commitWithBudget(
+        cellBudget: number,
+        bank: SymbolData[],
+        padProvider = provider,
+    ): number[] {
+        const flow = new ReelDataFlow();
+        flow.setPerformanceDataBank(bank, resolver);
+        flow.beginSpin();
+        flow.commitResult(
+            [symbol(1), symbol(1), symbol(1)],
+            [],
+            cellBudget,
+            true,
+            0,
+            resolver,
+            padProvider,
+            validator,
+        );
+        return flow.dataList.remainingData.map((d) => d.id);
+    }
+
+    /* 佇列 = [7,7,7, 2]：開頭一張 1×3，後面一張 1×1。 */
+    const mixedBank = [symbol(7), symbol(2)];
+
+    check(
+        "預算 2 放不下 1×3，整組跳過並改用 1×1 補滿，不切成兩格 7",
+        commitWithBudget(2, mixedBank),
+        [1, 1, 1, 1, 1],
+    );
+    check(
+        "預算 3 剛好放得下整組 1×3",
+        commitWithBudget(3, mixedBank),
+        [7, 7, 7, 1, 1, 1],
+    );
+    check(
+        "預算 4 放完 1×3 之後，佇列自己的 1×1 也放得下",
+        commitWithBudget(4, mixedBank),
+        [7, 7, 7, 2, 1, 1, 1],
+    );
+    check(
+        "預算 0 一格表演牌都不留",
+        commitWithBudget(0, mixedBank),
+        [1, 1, 1],
+    );
+
+    /* 佇列 = [7,7,7]：用完之後零頭只能向牌庫要（provider 回 1×1）。 */
+    check(
+        "佇列用完後零頭由牌庫的 1×1 補滿",
+        commitWithBudget(4, [symbol(7)]),
+        [7, 7, 7, 1, 1, 1, 1],
+    );
+    check(
+        "牌庫只剩放不下的大牌時，接受低於預算而不切壞它",
+        commitWithBudget(2, [symbol(7)], () => symbol(7)).length,
+        3,
+    );
+}
+
+// ────────── 7d. 決議 30：拆掉進場端沒湊滿的那一組 ──────────
+
+/*
+ * 情境：表演牌庫裡有一張 1×3（id 7），它只進場了兩格，head 還沒進來。
+ * 這時候正式結果也是 7 —— resolveGroupOffset() 只比對 id 與 offset，
+ * 不拆掉的話結果的第一格會被接進那組沒湊滿的表演牌裡。
+ *
+ * 詳見 doc/Slot-Base-Unit-Refactor-1x1.md §2.2.2。
+ */
+group("7d. 決議 30：拆掉進場端沒湊滿的那一組");
+
+{
+    const registry = createRegistry();
+    const resolver = (data: SymbolData) => registry.getCellSpan(data.id);
+    const validator = () => undefined;
+    const provider = () => symbol(1);
+
+    /** 建出「1×3 表演牌只進場兩格」的狀態。 */
+    function createPartiallyEnteredGroup(): {
+        manager: ReelIconManager;
+        flow: ReelDataFlow;
+    } {
+        const manager = createManager(registry);
+        manager.initialize({
+            entryBuffer: [symbol(1), symbol(1), symbol(1)],
+            visible: [symbol(1), symbol(1), symbol(1)],
+            exitBuffer: [symbol(1), symbol(1), symbol(1)],
+        });
+
+        const flow = new ReelDataFlow();
+        flow.setPerformanceDataBank([symbol(7), symbol(1)], resolver);
+        flow.beginSpin();
+
+        for (let index = 0; index < 2; index++) {
+            const consumed = flow.consumeNextData(
+                provider,
+                validator,
+                resolver,
+            );
+            manager.recycleExitedCell(consumed.data, consumed.resultSpinId);
+        }
+
+        return { manager, flow };
+    }
+
+    /** 把結果三格實際餵進場，回傳整條 strip 的 groupOffset。 */
+    function enterResultCells(
+        manager: ReelIconManager,
+        flow: ReelDataFlow,
+    ): number[] {
+        for (let index = 0; index < 3; index++) {
+            const consumed = flow.consumeNextData(
+                provider,
+                validator,
+                resolver,
+            );
+            manager.recycleExitedCell(consumed.data, consumed.resultSpinId);
+        }
+
+        return groupOffsets(manager);
+    }
+
+    // ── 拆解本身
+    {
+        const { manager, flow } = createPartiallyEnteredGroup();
+
+        check(
+            "進場端最外格回報還缺 1 格",
+            manager.incompleteEntryGroupPendingCellCount,
+            1,
+        );
+        check(
+            "拆解前進場端是 1×3 的兩格 follower",
+            groupOffsets(manager).slice(0, 2),
+            [1, 2],
+        );
+
+        const filler = flow.takeSingleCellPerformanceSymbol(
+            resolver,
+            provider,
+            validator,
+        );
+
+        check("牌庫取得的 filler 是 1×1", resolver(filler), 1);
+        check(
+            "改寫格數 = 已進場的格數",
+            manager.dissolveIncompleteEntryGroup(filler),
+            2,
+        );
+        check(
+            "拆解後那兩格各自成組",
+            groupOffsets(manager).slice(0, 2),
+            [0, 0],
+        );
+        check(
+            "拆解後進場端邊界乾淨",
+            manager.incompleteEntryGroupPendingCellCount,
+            0,
+        );
+        checkThrows("filler 不是 1×1 就丟例外", () => {
+            const another = createPartiallyEnteredGroup();
+            another.manager.dissolveIncompleteEntryGroup(symbol(6));
+        });
+    }
+
+    // ── 拆解之後提交結果：group 不再被吸走
+    {
+        const { manager, flow } = createPartiallyEnteredGroup();
+        const pendingCellCount =
+            manager.incompleteEntryGroupPendingCellCount;
+        const filler = flow.takeSingleCellPerformanceSymbol(
+            resolver,
+            provider,
+            validator,
+        );
+        manager.dissolveIncompleteEntryGroup(filler);
+
+        flow.commitResult(
+            [symbol(7), symbol(7), symbol(7)],
+            [],
+            0,
+            true,
+            pendingCellCount,
+            resolver,
+            provider,
+            validator,
+        );
+
+        check(
+            "被拆那組的未讀尾段一併從佇列丟棄",
+            flow.dataList.remainingData.map((d) => d.id),
+            [7, 7, 7],
+        );
+        check(
+            "結果入場後 head 在進場側，offset 遞增",
+            enterResultCells(manager, flow).slice(0, 3),
+            [0, 1, 2],
+        );
+    }
+
+    // ── 對照組：不拆就會被吸走（這條在修正前會通過，修正後仍應維持）
+    {
+        const { manager, flow } = createPartiallyEnteredGroup();
+
+        flow.commitResult(
+            [symbol(7), symbol(7), symbol(7)],
+            [],
+            0,
+            true,
+            0,               // 不告知拆解，等同修正前的行為
+            resolver,
+            provider,
+            validator,
+        );
+
+        check(
+            "不拆的話結果被沒湊滿的那組吸走，錯位成 1,2,0",
+            enterResultCells(manager, flow).slice(0, 3),
+            [1, 2, 0],
+        );
+    }
 }
 
 // ───────────────────────── 統計 ─────────────────────────
