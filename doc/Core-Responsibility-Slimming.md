@@ -129,7 +129,7 @@ isVertical 2 + moveDis 3 + moveDir 5 + iconDis 2
 
 ## 3. 已執行的項目
 
-以下在移植完成後執行，每一步都經 `egret build` 與 56 項純 TS 斷言驗證。
+以下在移植完成後執行，每一步都經 `egret build` 與純 TS 斷言驗證（當時 56 項，決議 30 之後為 66 項）。
 
 ### 3.1 去除重複（決議 28 及相關）
 

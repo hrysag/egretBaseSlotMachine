@@ -5,6 +5,7 @@
 > 姊妹文件：[Cocos-To-Egret-Slot-Port-Map.md](Cocos-To-Egret-Slot-Port-Map.md)、[Egret-Slot-Exml-Editable-Surface.md](Egret-Slot-Exml-Editable-Surface.md)、[ReelTemplate-v3-Reference-Study.md](ReelTemplate-v3-Reference-Study.md)
 > 後續：[Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md) —— 移植完成後的責任重劃與瘦身量測，決議 21 起編號於該文
 > 執行期：[Core-Runtime-Flow.md](Core-Runtime-Flow.md) —— 從心跳到停輪的實際路徑流程圖
+> 掉落式：[Drop-Module-Readiness.md](Drop-Module-Readiness.md) —— Drop 模組的現況評估與前置決議，決議 33 起編號於該文
 > 本文行號以 Cocos 完成版為準。
 
 ---
@@ -16,7 +17,7 @@
 | 1 | **Runtime／Icon 一律 1×1**；大 Symbol 由 N 個連續 cell 組成一個 group |
 | 2 | group 的 **head 在進場側**，圖從 head 往**退場方向**延伸 `cellSpan` 格 |
 | 3 | 由 server per-cell 結果推導 group 時，**從退場端往進場端掃**，貪婪開組 |
-| 4 | 被顯示區截斷的 group **只會截在進場端** |
+| 4 | ~~被顯示區截斷的 group **只會截在進場端**~~ → **改為：兩端都可能被截斷**，各有一套補格（見 §2.3.1） |
 | 5 | 進場／退場 buffer **對稱，各 = maxSpan** |
 | 6 | `ReelSymbolRuntime.cellSpan` **換成** `groupOffset`（換，不是加） |
 | 7 | 不在 runtime 上存 group 總長，需要時查 Registry |
@@ -33,6 +34,11 @@
 | 18 | 位置公式預留 `cellOffset[k]` 一層供未來掉落式使用，滾動期恆為 `0` |
 | 19 | `displayPriority` **保留**（美術可能溢出單格） |
 | 20 | 啟動／停止效果**合併成單一 `ReelEffectConfig`**，欄位改對稱的 `startEffect` / `stopEffect`（見 §3.10） |
+| 30 | 提交結果前**拆掉**進場端沒湊滿的那一組（改寫成 1×1），**不補完**（見 §2.2.2） |
+| 31 | 截斷**兩端都要補**：進場端往佇列**末端補**、退場端往佇列**前端墊**（見 §2.3.1）。此決議推翻決議 4 |
+| 32 | **`cellSpan` 不得大於 `visibleCellCount`**。超過的話「盤面被單一 Symbol 填滿」時缺口落在哪一端無法從盤面判斷（見 §2.3.1 末段） |
+
+> 決議 21～29 在 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、決議 33 起在 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。決議 30～32 因為屬於 group 模型本身，記在本文。
 
 **不變的東西**：`cellSpan` 仍然由企劃在 `registerSymbolCells()` 填寫，格式一字不改；server 結果格式（per-cell、長度 === `visibleCellCount`）不變；`moveInterval`＝一個 Cell 的時間不變；半格 Movement 拆分不變；`targetStopTime` 的對外語意不變；座標原點與 `axisPosition` 的語意不變；**Movement 維持集中在 Reel 推進單一數值軸，Icon 不繼承 Movement**。
 
@@ -116,6 +122,75 @@ v3 的循環幾何          ← 拿回來
 
 ## 2. 核心模型
 
+### 2.0 名詞：strip 與資料佇列
+
+整份文件反覆出現這兩個詞，而且**最容易混淆的錯誤都來自把它們當成同一件事**，所以先定義。
+
+#### strip
+
+**一條軸上那串固定數量的格子。** 狀態列印的 `strip = 9 cells` 就是它。
+
+```text
+strip 長度 = maxCellSpan + visibleCellCount + maxCellSpan
+           =     3       +        3         +     3        = 9
+```
+
+```text
+        ┌────────┐
+ 進場   │  idx0  │ ┐
+ buffer │  idx1  │ │ maxCellSpan 格 —— 還沒露出來的預備區
+        │  idx2  │ ┘
+        ╞════════╡ ← mask 上緣
+ 可視   │  idx3  │ ┐
+        │  idx4  │ │ visibleCellCount 格 —— 玩家唯一看得到的區域
+        │  idx5  │ ┘
+        ╞════════╡ ← mask 下緣
+ 退場   │  idx6  │ ┐
+ buffer │  idx7  │ │ maxCellSpan 格 —— 已經滾出去、等著被回收
+        │  idx8  │ ┘
+        └────────┘
+```
+
+| 東西 | 位置 |
+|---|---|
+| 每格的資料 | `ReelIconManager._symbols`（對外 `BaseReel.symbols`），9 個 `ReelSymbolRuntime` |
+| 每格的顯示物件 | `ReelIconManager._icons`（對外 `BaseReel.icons`），9 個 `BaseReelIcon`，**與上面永久同索引配對** |
+| 長度 | `BaseReel.stripCellCount` |
+| 可視段起點 | `BaseReel.firstVisibleIndex`（恆等於 `maxCellSpan`） |
+
+兩個關鍵性質：
+
+1. **數量永遠不變。** 建立時建 `stripCellCount` 個，之後不增不減。「滾動」是把退場端最外格搬回進場端再換上新資料（`pop()` / `unshift()`，見 §2.9），不是生成新物件。決議 30（§2.2.2）敢「就地改寫」也是建立在這條上 —— 那幾格是固定的容器。
+2. **它不是資料來源。** 資料從資料佇列流進來，一個 Cell 邊界搬一格。
+
+名字沿用拉霸機的「輪帶」。v3 叫 `_iconList`；本文用 strip 是因為要同時涵蓋資料（`_symbols`）與顯示（`_icons`）兩條同索引的陣列。
+
+#### 資料佇列
+
+**本輪還沒進場的資料**，`ReelDataFlow` 持有的 `ReelDataList`（對外 `BaseReel.dataList`）。以 **Cell** 為單位，1×N Symbol 在入列時就展開成 N 筆相同 id（§3.5）。
+
+```text
+   資料佇列（ReelDataList）              strip（_symbols）
+   本輪還沒進場的資料，會用完       ←→   固定 stripCellCount 格，永遠不變
+   [7, 7, 7, 1, 62, …]                  [idx0 … idx8]
+         │                                    ↑
+         └──── consumeNextData() ─────────────┘
+               每個完整 Cell 邊界搬一格
+```
+
+#### 為什麼一定要分清楚
+
+`groupOffset` 只存在於 **strip** 上（`ReelSymbolRuntime.groupOffset`），是入場那一刻由鄰居推導出來的（§2.2）；**資料佇列裡只有 id，沒有 group 歸屬**。
+
+所以「這一組有沒有湊滿」這個問題，在兩邊要用完全不同的方式看：
+
+| | 怎麼看出「這組壞了」 |
+|---|---|
+| strip | 直接讀 `_symbols[0].groupOffset`，不是 0 就是沒湊滿 |
+| 資料佇列 | **看不出來** —— 只有 id，要回去追它是被誰、怎麼切出來的 |
+
+決議 30（§2.2.2）巡的是 strip，所以管不到「還躺在佇列裡、已經被切壞」的組 —— 那是 §6 仍未處理的一項。
+
 ### 2.1 不變量（整份重構的依據）
 
 > **一個 group 的所有 cell 同生共死。**
@@ -146,6 +221,100 @@ if (neighbour !== undefined
 
 head 放進場側的理由：head 最後進場，圖畫出來時 follower 全都就位；而且整組還在進場 buffer 內，玩家不會看到半成品。反過來把 head 放退場側，圖會往回蓋到還沒換資料的格子上。
 
+實作在 `ReelIconManager.resolveGroupOffset()`，由 `recycleExitedCell()`、`recycleExitedCellKeepingData()` 與 `rebindEntryRuntime()` 三處呼叫：
+
+```ts
+private resolveGroupOffset(
+    data: SymbolData,
+    neighbourTowardExit?: ReelSymbolRuntime,
+): number {
+    if (
+        neighbourTowardExit !== undefined
+        && neighbourTowardExit.data.id === data.id
+        && neighbourTowardExit.groupOffset > 0
+    ) {
+        return neighbourTowardExit.groupOffset - 1;
+    }
+
+    return this.getCellSpan(data) - 1;
+}
+```
+
+**判斷條件只有 id 與 offset，沒有「這格屬於哪一批資料」的概念** —— 表演牌與正式結果若是同一張 Symbol，邊界會被接在一起。這就是決議 30（§2.2.2）要處理的事。
+
+### 2.2.1 怎麼讀一整條 strip 的 `groupOffset`
+
+排錯時最常看的就是 `BaseReel.symbols` 逐格印出來的 `groupOffset` 陣列。它依內部陣列順序排列，也就是**進場端 → 退場端**。
+
+**讀法只有一條規則：每遇到一個 `0` 就是一組的開始，後面連著遞增的數字都是它的 follower。**
+
+```text
+0, 1, 2   一張 1×3（head 在最前，圖往退場方向蓋三格）
+0, 1      一張 1×2
+0         一張 1×1，或一張大牌只剩 head 還沒走完
+```
+
+最後一項從 offset 本身分不出來，要配 `ReelSymbolRegistry.getCellSpan()` 或可視格的 id 才能確定。
+
+實例（可視 3 格、`maxCellSpan = 3`、strip 9 格、`firstVisibleIndex = 3`）：
+
+```text
+groupOffset = [0, 1, 2,   0, 1, 2,   0, 1,   0]
+               └─ idx0~2 ┘└─ idx3~5 ┘└idx6,7┘ └idx8
+
+        ┌────────┐
+ 進場   │   0    │ idx0  ┐
+ buffer │   1    │ idx1  │ 一組 1×3
+        │   2    │ idx2  ┘
+        ╞════════╡ ← 顯示區上緣
+ 可視   │   0    │ idx3  ┐
+ 3 格   │   1    │ idx4  │ 一組 1×3，剛好填滿顯示區
+        │   2    │ idx5  ┘
+        ╞════════╡ ← 顯示區下緣
+ 退場   │   0    │ idx6  ┐ 一組 1×2
+ buffer │   1    │ idx7  ┘
+        │   0    │ idx8    單獨一格
+        └────────┘
+```
+
+**判讀重點：可視段（`firstVisibleIndex` 起算 `visibleCellCount` 格）必須自成完整的組。**
+出現下列形狀就是壞掉了：
+
+| 可視段長相 | 意義 |
+|---|---|
+| `0, 1, 2` | 正常，一張 1×3 填滿顯示區 |
+| `1, 2, 0` | **錯位**。前兩格是 head 在進場 buffer 那組的 follower，第三格是另一組的 head —— 畫面上前兩格空白、第三格只露出大圖的頭一格 |
+| 可視段以 `1` 或 `2` 開頭 | 該組的 head 在顯示區外，圖是從上面蓋下來的；只有「上一輪滾出來的截斷盤面」才合法（§2.1、決議 4） |
+| 出現 `0` 之後接的不是 `1` | 兩組之間斷開，或有孤兒 follower |
+
+follower 不畫圖，所以**孤兒 follower 在畫面上就是空格**，不是黑框也不是錯圖 —— 看到空格先印這條陣列。
+
+### 2.2.2 決議 30：提交結果前拆掉進場端沒湊滿的那一組
+
+**問題**：`ReelDataFlow.commitResult()` 換掉未讀尾段時，進場端可能正有一組大 Symbol 只進場了一部分（head 還沒進來）。它剩下的格子被 `takePerformanceCellsByBudget()` 依預算砍掉之後，正式結果的第一格入列時，退場側鄰居就是那組沒湊滿的 Cell。`resolveGroupOffset()` 只比對 id 與 offset，**同一張牌就會被接進去**，整批 offset 跟著錯位，可視段變成上表的 `1, 2, 0`。
+
+**決議：把那一組拆掉，不補完。**
+
+- 已經進場的那幾格就地改寫成各自獨立的 1×1（`ReelIconManager.dissolveIncompleteEntryGroup()`）
+- 佇列裡屬於該組的未讀格數一併丟棄（`ReelDataFlow.commitResult()` 的 `dissolvedEntryGroupCellCount`）
+- 入口在 `BaseReel.dissolveIncompleteEntryGroup()`，由 `tryCommitResultAtBoundary()` 在提交前呼叫
+
+**為什麼可以就地改寫**：group 的 span 最多 `maxCellSpan`，進場 buffer 也正好是 `maxCellSpan` 格，所以已進場的部分最多 `maxCellSpan - 1` 格，必定整批還在 buffer 內 —— 玩家從來沒看過它們。
+
+**為什麼替代品只能是 1×1**：每格自成完整的一組（offset 恆為 0），任何數量都湊得出來。與 `ReelDataFlow.insertPerformanceCellsBeforeResult()`（Turbo 同步補牌）同一個理由，也共用 `takeSingleCellPerformanceSymbol()` 這條搜尋。牌庫至少要有一張 1×1 的約束（§3.5）因此再多一個依賴點。
+
+**為什麼不用「補完同 id」**（曾評估，否決）：
+
+| | 補完同 id | 拆成 1×1 |
+|---|---|---|
+| 額外行程 | 1 ～ `maxCellSpan - 1` 格 | **0 格** |
+| 停輪時間 | 補齊格繞過 `performanceCellBudget`，急停時失準 | 完全由預算決定 |
+| 副作用 | 把本該丟掉的表演牌救活，**同一張大 Symbol 會連出兩次**，而且必定連出（會吸附的前提就是同 id） | 那組在 buffer 內就被拆掉，沒露過臉 |
+
+停輪時間精確是本框架相對 v3 的主要價值（§1.4），不值得讓一張表演牌的殘組侵蝕它。
+
+**已知未涵蓋**：`takePerformanceCellsByBudget()` 仍可能從**尾端**切斷一個 group，留下的殘組會造成同樣的吸附；那是另一個待決議項（見 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)）。另外 `ReelIconManager.isAligned()` 只比對 `data.id` 與 `resultSpinId`，**不檢查 group 完整性**，錯位的盤面它會放行。
+
 ### 2.3 結果進場佇列的建立
 
 1. 把 server 的**畫面閱讀順序**陣列，依當前方向轉成**退場端 → 進場端**順序。
@@ -162,6 +331,66 @@ head 放進場側的理由：head 最後進場，圖畫出來時 follower 全都
 | 2 | 7 | 上一格 id=1，不同 | 3 | `3-1 = 2` → 開新組 |
 | 3 | 7 | 上一格 offset=2 > 0 | 3 | `2-1 = 1` → 接續 |
 | 4（框架補的） | 7 | 上一格 offset=1 > 0 | 3 | `1-1 = 0` → head，停在進場 buffer |
+
+### 2.3.1 決議 31：截斷的兩端
+
+> **本節推翻決議 4。** 原本寫「被顯示區截斷的 group 只會截在進場端」，錯了。
+
+head 恆在進場側（決議 2），圖往退場方向延伸。把一張大 Symbol 從進場走到出場看一遍就知道兩端都會截：
+
+```text
+進場中（head 還沒到）          出場中（身體已經走了）
+        ╞════════╡                     ╞════════╡
+ 可視   │  7:1   │              可視   │   1    │
+        │  7:2   │                     │   2    │
+        │   2    │                     │  7:0   │ ← 只剩 head
+        ╞════════╡                     ╞════════╡
+ 缺的是 head，在進場端外        缺的是 follower，在退場端外
+```
+
+右邊那個狀態是**每一張大 Symbol 出場的必經過程**，不是特例。
+
+兩端各有一套補格，**互為鏡像**，都在 `ReelDataFlow.commitResult()` 內完成：
+
+| | 進場端截斷 | 退場端截斷 |
+|---|---|---|
+| 缺的是 | head（offset 0） | follower（offset 較大的那幾格） |
+| 那幾格相對結果 | **更晚**進場 | **更早**進場 |
+| 補在佇列的 | **末端**（append） | **前端**（prepend） |
+| 實作 | `createGroupCompletionCells()` | `createExitTruncationCells()` |
+| 判斷依據 | 掃完最後一格 `offset > 0` | 開頭那段 run 的長度不是 `cellSpan` 的整數倍 |
+
+退場端的推導（7 是 1×3、3 格盤面、server 給 `[1,2,7]`）：
+
+```text
+畫面上→下 = [1, 2, 7]
+進場順序   = [7, 2, 1]        ← 開頭就是退場端
+開頭 run   = 1 格，cellSpan 3 → 墊 3 - 1 = 2 格 7
+
+佇列 = [7, 7, 7, 2, 1]
+offsets =  2  1  0  0  0
+可視段（上→下）= 1:0  2:0  7:0     ← 最下面那格是 head，圖往顯示區外延伸兩格
+```
+
+**沒有歧義。** head 恆在進場側，所以退場端那段 run 的上方若是別的 id，它就只能是「某一組的前 k 格」，缺的必定在退場端外。1016 之所以需要 server 額外給 `direction` 欄位（`UPWARD` / `DOWNWARD`），是因為它的 wild **兩個方向都能長**；我們的方向是常數，從 per-cell 陣列加 Registry 的 `cellSpan` 就推得出來。
+
+**時間要一起算。** 墊的那幾格比結果更早進場，結果因此多走同樣的格數。`ReelStopFlow.tryCommitResultAtHandoff()` 先向 `ReelDataFlow.countExitTruncationCells()` 問出格數，加進 `resultEntryHalfCellCount` 之後才算預算與 `directResultStopTime`，否則停輪時間會短算。
+
+#### 決議 32：`cellSpan <= visibleCellCount`
+
+唯一推不出來的情況是 **run 一路貼滿兩端**（整個盤面同一個 id）。例：可視 3 格、盤面 `[7,7,7]`、7 是 1×4 ——
+
+```text
+截在進場端？  可視是 offset 1,2,3
+截在退場端？  可視是 offset 0,1,2，第 4 格在下方外
+兩端都截？    可視是 offset 1,2,3 的某段
+```
+
+三者從盤面分不出來。**限制 `cellSpan <= visibleCellCount` 之後這個情況消失**（盤面填滿時 run 長度 ≥ cellSpan，必定是完整組的整數倍或可由既有規則解出）。
+
+程式目前**不擋**這件事；`createExitTruncationCells()` 遇到 run 貼滿兩端時直接回傳空陣列，把缺口交給進場端那套補。要不要在 `registerSymbolCells()` 或 `init()` 加一道 `cellSpan <= visibleCellCount` 的驗證，未定（§6）。
+
+驗證見 `tests/CoreGeometry.test.ts` 的 `7f. 截斷盤面：進場端與退場端都要補`。
 
 ### 2.4 Strip 長度
 
@@ -274,6 +503,8 @@ this._icons.unshift(icon);
 ### 2.10 掉落式（Drop）對位置模型的影響
 
 v3 內建的 `DropReel`（`v3/Scripts/DropReel/`）目前不在移植範圍，但位置模型必須先為它留路，否則之後要加會動到核心。
+
+> 本節只處理**位置模型**這一層。Drop 模組整體的現況評估、v3 四個核心機制的對照、連續牌（group）帶出的五個問題與決議 33，見 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。
 
 **Drop 違反「整軸統一位移」的四個特性：**
 
@@ -500,6 +731,12 @@ public getGroupIcons(runtime: ReelSymbolRuntime): BaseReelIcon[];
 
 停輪時間 = 剩餘 cell 數 × `moveInterval`，仍需湊到精確 cell 數。策略不變：**塞到放不下為止，尾巴用 1×1 補滿**。牌庫至少要有一張 1×1 的約束維持。
 
+> **實作補記**：`takePerformanceCellsByBudget()` 原本第一行是 `remainingCells.slice(0, cellBudget)`，那一刀會切在 group 中間，在正式結果正前面留下湊不滿的組（結果同 id 會被吸走，不同 id 則留下孤兒 follower）。已改成**逐組取**：讀 `cellSpanResolver` 一次前進一整組，遇到第一個放不進預算的組就停，零頭再由牌庫補（`takeNextPerformanceSymbol(cellSpan <= shortfall)`）。牌庫湊不出東西時接受低於預算，不切壞任何一組。
+>
+> 這一步成立之後，`createGroupCompletionCells()` JSDoc 寫的前提 ——「結果之前的表演資料永遠以完整 group 結尾」—— 才真的被保證。另一半由決議 30（§2.2.2）負責：進場端**已經進場**的殘組拆成 1×1、佇列裡的殘餘一併丟棄。兩者合起來才涵蓋 group 邊界的兩個破口。
+>
+> 驗證見 `tests/CoreGeometry.test.ts` 的 `7e. 預算切資料不得切在 group 中間`。
+
 差別是：現在裝箱失敗會造成**時間誤差**（「接受低於預算，不為補滿而超時」），改完之後只影響**表演牌的長相**，時間永遠精確。
 
 ### 3.6 `Reel/BaseReel.ts`
@@ -684,7 +921,7 @@ node temp/tests/tests/CoreGeometry.test.js
 
 > Cocos 版當初的 Phase 4 verification 用的是同一套手法，只是 stub 的對象是 `cc`。
 
-**執行結果**：56 項斷言全數通過（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過），涵蓋下列第 1～3 項與部分第 6 項。
+**執行結果**：77 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）。
 
 
 
@@ -703,13 +940,22 @@ node temp/tests/tests/CoreGeometry.test.js
 
 ## 6. 未定案
 
+> **已結案（記錄在此避免重複追查）**：group 邊界原本有兩個破口，現在都堵上了。
+> **① strip 上已經進場的殘組** —— 決議 30（§2.2.2）拆成 1×1。這就是第二棒交接文件
+> `SESSION-2026-09-13-B-Slimming-Stage9.md` §2 記的「Bug 3」。
+> **② 還在資料佇列裡、被預算切壞的殘組** —— `takePerformanceCellsByBudget()` 改成逐組取（§3.5 實作補記）。
+> 這一項與 Bug 3 **不是同一件事**，差別在殘組所在的位置（§2.0）。
+> **③ 退場端截斷推導不出來** —— 原本列為未定案（「要另外開 API」），實際上不需要：head 恆在進場側，方向是常數，從 per-cell 陣列就推得出來。已由決議 31（§2.3.1）實作，`createExitTruncationCells()` 與進場端的補格互為鏡像。
+
+- **`isAligned()` 不檢查 group 完整性。** `ReelIconManager.isAligned()` 只比對可視格的 `data.id` 與 `resultSpinId`，所以像 `1, 2, 0` 這種錯位的盤面它會放行（決議 30 之前實測過）。要不要補一道「可視段必須自成完整的組」的檢查（判準見 §2.2.1 的對照表），未定。
+
 - **`onHalfCellComplete` 這個對外 Callback 要不要保留？** 交接改成每整格固定執行（§3.4）之後，它與交接時機脫鉤。若沒有遊戲端在用第一個半格的時機，傾向保留 Callback 但退回單純的時間通知；待確認。
 - **`reconfigureStoppedLayout()` 的展開行為**：1×1 展開成 1×N 時，多出來的格子從哪裡取、原本那些 runtime 的 `groupOffset` 怎麼重算，還沒設計。
 - **大 Symbol 的中獎動畫／handoff**：目前只確定 `getGroupIcons()` 這個 on-demand 入口，實際動畫要掛在 head 還是另開 overlay 層沒討論。
-- **退場端截斷**：`groupOffset` 表達得出來（X 側最外格 offset > 0），但從 server per-cell 陣列推導不出來。若企劃的 `setInitialLayout()` 或 `reconfigureStoppedLayout()` 需要直接指定這種盤面，要另外開 API。
+- **`cellSpan <= visibleCellCount` 要不要加驗證？** 決議 32 已定下這條限制，但 `registerSymbolCells()` 與 `init()` 目前都不擋。超過時 `createExitTruncationCells()` 會靜默退回「只補進場端」，盤面被單一 Symbol 填滿時會算錯。
 - **Icon 數量對 Egret 的影響**：strip 從 `visible + 2` 變成 `visible + 2 × maxSpan`；Egret 沒有內建 Pool（見 Port Map §11），5 軸 × 11 格 = 55 個顯示物件要實測。
 - **`ReelLayoutSource` 的排列順序約定**：目前沿用 Cocos 版的資料流方向（進場端 → 退場端），實務上沒出過問題。曾評估改成畫面閱讀順序（與 Server 結果一致、企劃不必考慮滾動方向，欄位須改名 `leadingBuffer` / `trailingBuffer`，並由 `BaseReel` 做三段對調＋各自反轉的轉換），**暫不採用**，需要時再調整。
-- **掉落式（Drop）本身不在本次範圍**：位置模型已預留 `cellOffset[k]`（§2.10），但 `reorderDropIcon()` 的分組重排、`DropType` 狀態機、每格各自的 `BaseMovement[]` 全部尚未設計。
+- **掉落式（Drop）本身不在本次範圍**：位置模型已預留 `cellOffset[k]`（§2.10）。現況評估、v3 對照、連續牌帶出的五個問題與決議 33 已另文記錄 → [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。
 - **`tsconfig.json` 的 `lib` 與 `tslib`**：搬遷前必須先決定，否則純 TS 檔編不過。詳見 §7。
 - **搬遷順序（階段 0～9）尚未寫入本文件**，等 §7 的兩個決定拍板後再補。
 
