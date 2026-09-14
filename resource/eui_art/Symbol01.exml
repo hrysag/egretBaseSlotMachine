@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<e:Group class="art.Symbol01" width="160" height="128" xmlns:e="http://ns.egret.com/eui">
+    <e:Image width="100%" height="100%" source="symbol_01_png"/>
+</e:Group>

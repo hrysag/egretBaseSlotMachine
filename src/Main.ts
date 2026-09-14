@@ -27,11 +27,18 @@
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
+import { SingleReelScene } from "./test/SingleReelScene";
+
 /**
  * 專案進入點。
  *
  * 只負責：引擎生命週期、Adapter 注入、資源與主題載入。
  * 實際的 Slot 場景建立請寫在 startScene() 內或由它呼叫。
+ *
+ * > 本檔一有 `import` 就成為 ES module，但 bundler 的 ts-transformer
+ * > 對每個 class 宣告都會注入 `window["X"] = X`，所以
+ * > `data-entry-class="Main"` 仍然找得到它（`egret.getDefinitionByName`
+ * > 是查 `window`）。這點在階段 9a 實測確認過。
  */
 class Main extends eui.UILayer {
 
@@ -89,11 +96,7 @@ class Main extends eui.UILayer {
         });
     }
 
-    /**
-     * 資源載入完成後的場景進入點。
-     *
-     * TODO：Reel 場景完成後，把 DevSymbolCheck 換掉並刪除該檔案。
-     */
+    /** 資源載入完成後的場景進入點。 */
     private async startScene(): Promise<void> {
         console.log(
             "[Main] resource ready. stage =",
@@ -104,9 +107,6 @@ class Main extends eui.UILayer {
 
         await RES.loadGroup("symbol");
 
-        const check = new DevSymbolCheck();
-        check.x = 0;
-        check.y = 40;
-        this.addChild(check);
+        this.addChild(new SingleReelScene());
     }
 }

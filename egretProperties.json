@@ -29,7 +29,8 @@
   ],
   "eui": {
     "exmlRoot": [
-      "resource/eui_skins"
+      "resource/eui_skins",
+      "resource/eui_art"
     ]
   }
 }

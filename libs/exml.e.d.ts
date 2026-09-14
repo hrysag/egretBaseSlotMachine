@@ -1,3 +1,7 @@
+declare module art{
+	class Symbol01 extends eui.Group{
+	}
+}
 declare module skins{
 	class ButtonSkin extends eui.Skin{
 	}
