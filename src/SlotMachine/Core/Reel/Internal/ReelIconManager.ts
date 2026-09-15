@@ -547,15 +547,177 @@ export class ReelIconManager {
     }
 
     /**
+     * 取得**圖有出現在顯示區**的 Icon，依進場端 → 退場端排列。
+     *
+     * 與「可視段的每一格」不是同一件事，截斷盤面上兩者會分岔：
+     *
+     * ```text
+     * 可視 [73, 73, 1]，73 是 1×3
+     *  idx2 │ 73:0 │ ← head 在進場 buffer，圖往下蓋三格
+     *  ═════╪══════╡ ← 顯示區上緣
+     *  idx3 │ 73:1 │ ← follower，自己不畫
+     *  idx4 │ 73:2 │ ← follower，自己不畫
+     *  idx5 │  1:0 │
+     *  ═════╧══════╡
+     *
+     * 可視段的每一格 → icons[3..5]，其中兩格什麼都沒畫
+     * 本方法         → icons[2]（73 的 head）與 icons[5]
+     * ```
+     *
+     * 判準是**「該 group 在可視段裡至少擁有一格」**，回傳那一組的 head
+     * —— 圖正好等於 head 起算 `cellSpan` 格，所以這個條件與「圖與顯示區
+     * 有交集」等價，而且是純索引算術，不需要幾何比較或容差。
+     * 一個 group 只回傳一個載體（head），不會因為占三格就出現三次。
+     *
+     * 滾動中（`stripOffset > 0`）整條 strip 往退場方向滑了不到一格，
+     * 進場側再外面那一格會有一部分露進顯示區，因此一併列入；
+     * 對齊時（`stripOffset === 0`）它的邊緣正好貼齊上緣，交集為零，排除。
+     */
+    public getVisibleIcons(): BaseReelIcon[] {
+        const result: BaseReelIcon[] = [];
+        const last = this.firstVisibleIndex + this._visibleCellCount - 1;
+        const first = this._stripOffset > 0
+            ? this.firstVisibleIndex - 1
+            : this.firstVisibleIndex;
+        let previousHeadIndex = -1;
+
+        for (let index = first; index <= last; index++) {
+            const runtime = this._symbols[index];
+
+            if (runtime === undefined) {
+                continue;
+            }
+
+            const headIndex = index - runtime.groupOffset;
+
+            /* 索引遞增且同組連續，所以比對前一個就足以去重。 */
+            if (headIndex < 0 || headIndex === previousHeadIndex) {
+                continue;
+            }
+
+            previousHeadIndex = headIndex;
+            const icon = this._icons[headIndex];
+
+            if (icon !== undefined) {
+                result.push(icon);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 取得與指定 Runtime 同組的全部 Icon，依進場端 → 退場端排列。
+     *
+     * 決議 9：不存引用。回收會就地改綁資料，任何存下來的同組引用
+     * 下一次交接就變髒，所以一律即時走訪，回傳新陣列。
+     *
+     * ## 為什麼走鄰居而不是用 cellSpan 算
+     *
+     * `headIndex = index - groupOffset` 加 `cellSpan` 可以一步算出範圍，
+     * 但那個範圍可能落在 strip 之外：一個 group 進場時 head 還沒進來、
+     * 出場時 follower 已經被回收，兩端都會有格子不在陣列上。改走鄰居
+     * （id 相同且 groupOffset 連續）就自然停在 strip 邊界，也不受
+     * `reconfigureStoppedLayout()` 重新註冊 cellSpan 的影響。
+     *
+     * 因此**回傳的格數可能少於 `cellSpan`**，那是進出場途中的正常狀態。
+     */
+    public getGroupIcons(
+        runtime: ReelSymbolRuntime,
+    ): BaseReelIcon[] {
+        const index = this._symbols.indexOf(runtime);
+
+        if (index < 0) {
+            throw new Error(
+                "getGroupIcons() requires a runtime that is currently "
+                + "on the strip.",
+            );
+        }
+
+        const range = this.getGroupIndexRange(index);
+        return this._icons.slice(range.start, range.end + 1);
+    }
+
+    /**
+     * 同組在 strip 上的索引區間（兩端皆含）。
+     *
+     * 判斷條件只有「id 相同」與「groupOffset 連續」，因此相鄰的
+     * 兩個同 id group 不會被黏成一組 —— 後一組的 head 是 0，
+     * 不等於前一格的 offset + 1。
+     */
+    private getGroupIndexRange(
+        index: number,
+    ): { start: number; end: number } {
+        const symbols = this._symbols;
+        let start = index;
+        let end = index;
+
+        while (start > 0) {
+            const previous = symbols[start - 1];
+
+            if (
+                previous.data.id !== symbols[start].data.id
+                || previous.groupOffset !== symbols[start].groupOffset - 1
+            ) {
+                break;
+            }
+
+            start--;
+        }
+
+        while (end < symbols.length - 1) {
+            const next = symbols[end + 1];
+
+            if (
+                next.data.id !== symbols[end].data.id
+                || next.groupOffset !== symbols[end].groupOffset + 1
+            ) {
+                break;
+            }
+
+            end++;
+        }
+
+        return { start, end };
+    }
+
+    /**
+     * 退場方向是否為局部座標的正向。
+     *
+     * **整個框架唯一的方向慣例來源。** `mapAxisToLocal()` 依它決定
+     * 正負號，遊戲端的 Icon 也依它決定 head 的大圖往哪邊延伸。
+     *
+     * 遊戲端不要自己從 `inverseDirection` 推導 —— 那等於把這條慣例
+     * 複製一份出去，慣例一改就靜默失效。`inverseDirection` 因此
+     * 刻意不對外暴露。
+     */
+    public get exitTowardPositiveAxis(): boolean {
+        return !this._inverseDirection;
+    }
+
+    /** 排列軸向；Icon 要靠它決定大圖的長邊擺在哪一軸。 */
+    public get layoutType(): ReelIconDirection {
+        return this._layoutType;
+    }
+
+    /**
      * 正式結果是否由畫面閱讀順序的開頭側進場。
      *
-     * 方向只有這個類別持有一份，所以這個推導也放在這裡；
-     * BaseReel 透過同名 getter 轉手，不再自己存 layoutType。
+     * 與 `exitTowardPositiveAxis` **同值**，因為兩個軸的閱讀順序都是
+     * 從座標小的一端開始（Egret 的 y 往下、x 往右）：垂直由上而下、
+     * 水平由左而右。所以「退場在正向」⟺「進場在座標小的那端」
+     * ⟺「進場在閱讀順序的開頭」。
+     *
+     * 保留獨立名稱是因為呼叫端問的是不同的問題，但**實作只有一份**。
+     *
+     * > 這裡原本是從 Cocos 版一字不改搬過來的
+     * > `Vertical ? !inverse : inverse`。Cocos 的水平正向是右→左
+     * > （`movementSign = inverse ? 1 : -1`），移植時 `mapAxisToLocal()`
+     * > 重新推導成左→右，這條卻沒跟著改，於是 Horizontal 整個反掉。
+     * > 因為四方向從沒被執行過，一直沒露面。
      */
     public get resultEntryAtDisplayStart(): boolean {
-        return this._layoutType === ReelIconDirection.Vertical
-            ? !this._inverseDirection
-            : this._inverseDirection;
+        return this.exitTowardPositiveAxis;
     }
 
     /**
@@ -688,16 +850,52 @@ export class ReelIconManager {
             icon.setData(runtime.data);
         }
 
+        this.syncIconCell(icon, runtime);
+
         const axis = this.getAxisPosition(index);
         const mapped = this.mapAxisToLocal(axis);
 
         icon.applyLayout({
             x: mapped.x,
             y: mapped.y,
-            groupOffset: runtime.groupOffset,
+            index,
         });
 
         return dataChanged;
+    }
+
+    /**
+     * 「我是什麼」只有換人才變，所以先比對再決定要不要通知。
+     *
+     * 每幀比對三個數字的成本遠低於讓遊戲端每幀重算尺寸與美術；
+     * 而且值一律現查 Registry，registry 被重新註冊時會自動跟上。
+     */
+    private syncIconCell(
+        icon: BaseReelIcon,
+        runtime: ReelSymbolRuntime,
+    ): void {
+        const registry = this._symbolRegistry;
+
+        if (registry === undefined) {
+            return;
+        }
+
+        const groupOffset = runtime.groupOffset;
+        const cellSpan = registry.getCellSpan(runtime.data.id);
+        const displayPriority =
+            registry.getDisplayPriority(runtime.data.id);
+        const current = icon.cell;
+
+        if (
+            current !== undefined
+            && current.groupOffset === groupOffset
+            && current.cellSpan === cellSpan
+            && current.displayPriority === displayPriority
+        ) {
+            return;
+        }
+
+        icon.applyCell({ groupOffset, cellSpan, displayPriority });
     }
 
     /**
@@ -722,21 +920,20 @@ export class ReelIconManager {
      * 同權重時以目前順序為次要鍵，避免每次重排都洗牌。
      */
     private sortIconDisplayLayers(): void {
-        const registry = this._symbolRegistry;
         const container = this._iconContainer;
 
-        if (registry === undefined || container === undefined) {
+        if (container === undefined) {
             return;
         }
 
         const sorted = this._icons.slice();
         sorted.sort((first, second) => {
-            const firstPriority = first.data === undefined
+            const firstPriority = first.cell === undefined
                 ? 0
-                : registry.getDisplayPriority(first.data.id);
-            const secondPriority = second.data === undefined
+                : first.cell.displayPriority;
+            const secondPriority = second.cell === undefined
                 ? 0
-                : registry.getDisplayPriority(second.data.id);
+                : second.cell.displayPriority;
 
             if (firstPriority !== secondPriority) {
                 return firstPriority - secondPriority;

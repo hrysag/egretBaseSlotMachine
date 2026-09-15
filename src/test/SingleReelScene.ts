@@ -1,4 +1,5 @@
 import { BaseReel } from "../SlotMachine/Core/Reel/BaseReel";
+import { ReelIconDirection } from "../SlotMachine/Core/Reel/Config/ReelIconDirection";
 import { SymbolData } from "../SlotMachine/Core/Reel/Data/SymbolData";
 import { TestSlotMachine } from "./TestSlotMachine";
 import {
@@ -8,15 +9,75 @@ import {
 } from "./TestSymbolTable";
 
 /**
+ * 停輪時可以送出的盤面清單。
+ *
+ * 73 是 1×3、62 是 1×2，其餘為 1×1。**刻意讓大圖在多數盤面上是不完整的**
+ * —— 一張 1×3 只要沒有正好填滿三格，就一定有格子落在顯示區外，而那正是
+ * `groupOffset` 推導、兩端補格與 `getVisibleIcons()` 最容易出錯的地方。
+ *
+ * 陣列是**畫面閱讀順序**，長度等於 visibleCellCount。
+ */
+const RESULT_SCENARIOS: { label: string; ids: number[] }[] = [
+    { label: "73,73,73  完整 1×3 填滿顯示區", ids: [73, 73, 73] },
+    { label: "73,73,1   截在進場端：head 在進場 buffer，露三分之二", ids: [73, 73, 1] },
+    { label: "73,1,1    截在進場端更深：只露最後一格", ids: [73, 1, 1] },
+    { label: "1,73,73   截在退場端：尾巴在退場 buffer", ids: [1, 73, 73] },
+    { label: "62,62,1   完整 1×2 靠前", ids: [62, 62, 1] },
+    { label: "1,62,62   完整 1×2 靠後", ids: [1, 62, 62] },
+    { label: "8,9,10    純 1×1 對照組", ids: [8, 9, 10] },
+];
+
+/**
+ * 四個滾動方向。
+ *
+ * 「正／反」的語意由 `ReelIconDirection` 的 JSDoc 定義：垂直正向是
+ * 上→下、水平正向是左→右。畫面閱讀順序一律從座標小的那一端開始，
+ * 所以正向時進場端就是閱讀順序的開頭。
+ */
+const DIRECTIONS: {
+    label: string;
+    layoutType: ReelIconDirection;
+    inverseDirection: boolean;
+}[] = [
+    {
+        label: "垂直正向（上→下）",
+        layoutType: ReelIconDirection.Vertical,
+        inverseDirection: false,
+    },
+    {
+        label: "垂直反向（下→上）",
+        layoutType: ReelIconDirection.Vertical,
+        inverseDirection: true,
+    },
+    {
+        label: "水平正向（左→右）",
+        layoutType: ReelIconDirection.Horizontal,
+        inverseDirection: false,
+    },
+    {
+        label: "水平反向（右→左）",
+        layoutType: ReelIconDirection.Horizontal,
+        inverseDirection: true,
+    },
+];
+
+/** 顯示區中心，四個方向共用。 */
+const CENTER_X = 320;
+const CENTER_Y = 420;
+
+/**
  * 階段 9a：單軸最小可跑場景。
  *
- * 目的**只有三個**，刻意不做多軸、不做 Turbo、不做四方向：
+ * 目的**只有四個**，刻意不做多軸、不做 Turbo：
  *
  * 1. 讓 SlotMachine 第一次真的被 webpack 打包 —— 在此之前
  *    entry 走不到那些模組，`egret build` 零錯誤只代表 tsc 型別檢查過。
  * 2. 確認 Egret 顯示層會動：Icon 建得出來、位置每幀更新、
  *    大 Symbol 的 head／follower 顯示正確。
  * 3. 確認停輪真的會在正式結果對齊時停下。
+ * 4. **四個方向都能實際跑一遍** —— 方向只影響三個地方
+ *    （`mapAxisToLocal()`、`createDisplayMaskRect()`、
+ *    `resultEntryAtDisplayStart`），但沒跑過就不算數。
  *
  * ## 這裡不碰 BaseReel 的流程
  *
@@ -25,35 +86,71 @@ import {
  * 由 `BaseSlotMachine` 負責 —— 場景自己**沒有** tick，也不直接呼叫
  * `startRoll()` / `commitResult()` / `updateMovement()`。
  *
- * 設定集中在 `TestSlotMachine`（對應 Cocos 版的 Inspector 欄位）。
+ * 設定集中在 `TestSlotMachine`（對應 Cocos 版的 Inspector 欄位），
+ * 只有方向由場景給 —— 因為它要能在執行期換。
  */
 export class SingleReelScene extends egret.DisplayObjectContainer {
 
-    private readonly _reel = new BaseReel();
-    private readonly _machine = new TestSlotMachine();
+    private _reel: BaseReel;
+    private _machine: TestSlotMachine;
+    private _frame: egret.Shape;
+
     private readonly _status = new egret.TextField();
 
     private _spinCount = 0;
     private _stopRequested = false;
+    private _scenarioIndex = 0;
+    private _directionIndex = 0;
 
     public constructor() {
         super();
-        this.buildMachine();
-        this.buildView();
-        this.refreshStatus();
+        this.buildStaticView();
+        this.rebuildReel();
     }
 
     // ───────────────── 建立 ─────────────────
 
-    /**
-     * 把 Reel 交給 SlotMachine。
-     *
-     * Reel 的幾何、時間、牌庫與初始盤面都在 `TestSlotMachine` 的三個
-     * Hook 裡，`init()` 會依序呼叫它們，這裡不重複設定。
-     */
-    private buildMachine(): void {
-        this._machine.init([this._reel]);
+    /** 按鈕與狀態列只建一次，換方向時不重建。 */
+    private buildStaticView(): void {
+        this.addLabel("階段 9a：單軸最小可跑場景", 20, 24, 0xffff66, 20);
 
+        this.addButton("開始滾動", 40, 640, () => this.onStart());
+        this.addButton("送出結果並停輪", 200, 640, () => this.onStop());
+        this.addButton("切換盤面", 360, 640, () => this.onCycleScenario());
+        this.addButton("切換方向", 40, 694, () => this.onCycleDirection());
+
+        this._status.size = 16;
+        this._status.textColor = 0xffffff;
+        this._status.lineSpacing = 6;
+        this._status.width = 600;
+        this._status.x = 20;
+        this._status.y = 754;
+        this.addChild(this._status);
+    }
+
+    /**
+     * 依目前方向重新建立 Reel 與 SlotMachine。
+     *
+     * 方向是 `BaseReel.init()` 的 config，而 `BaseSlotMachine.init()`
+     * 重複呼叫會直接略過，所以換方向只能整組重建 —— 這也順便驗證了
+     * `cleanup()` 真的清得乾淨。
+     */
+    private rebuildReel(): void {
+        if (this._machine !== undefined) {
+            this._machine.cleanup();
+            this.removeChild(this._reel);
+            this.removeChild(this._frame);
+        }
+
+        const direction = DIRECTIONS[this._directionIndex];
+
+        this._reel = new BaseReel();
+        this._machine = new TestSlotMachine(
+            direction.layoutType,
+            direction.inverseDirection,
+        );
+
+        this._machine.init([this._reel]);
         this._machine.onAllReelsStopped = () => {
             this._stopRequested = false;
             this.refreshStatus();
@@ -66,53 +163,48 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
         this._reel.onCellMovementComplete = () => {
             this.refreshStatus();
         };
-    }
 
-    private buildView(): void {
-        const visibleCells = this._machine.visibleCellCount;
-        const axisLength = visibleCells * TEST_CELL_PITCH;
-        const centerX = 320;
-        const centerY = 420;
-
-        this.addLabel("階段 9a：單軸最小可跑場景", 20, 24, 0xffff66, 20);
-
-        /* 顯示區外框，用來目視確認 Icon 有沒有超出可視範圍。 */
-        const frame = new egret.Shape();
-        frame.graphics.lineStyle(2, 0x00ff88, 0.9);
-        frame.graphics.drawRect(
-            centerX - TEST_COLUMN_WIDTH * 0.5,
-            centerY - axisLength * 0.5,
-            TEST_COLUMN_WIDTH,
-            axisLength,
-        );
-
-        /* 每一格的分隔線，停止時 Symbol 必須精確落在格內。 */
-        frame.graphics.lineStyle(1, 0x00ff88, 0.45);
-
-        for (let i = 1; i < visibleCells; i++) {
-            const y = centerY - axisLength * 0.5 + i * TEST_CELL_PITCH;
-            frame.graphics.moveTo(centerX - TEST_COLUMN_WIDTH * 0.5, y);
-            frame.graphics.lineTo(centerX + TEST_COLUMN_WIDTH * 0.5, y);
-        }
-
-        this._reel.x = centerX;
-        this._reel.y = centerY;
+        this._reel.x = CENTER_X;
+        this._reel.y = CENTER_Y;
         this._reel.mask =
             this._reel.createDisplayMaskRect(TEST_COLUMN_WIDTH);
 
+        this._frame = this.createFrame();
+
         this.addChild(this._reel);
-        this.addChild(frame);
+        this.addChild(this._frame);
+        this.refreshStatus();
+    }
 
-        this.addButton("開始滾動", 40, 640, () => this.onStart());
-        this.addButton("送出結果並停輪", 200, 640, () => this.onStop());
+    /** 顯示區外框與每格分隔線；長邊隨 layoutType 換軸。 */
+    private createFrame(): egret.Shape {
+        const vertical =
+            this._reel.layoutType === ReelIconDirection.Vertical;
+        const visibleCells = this._machine.visibleCellCount;
+        const axisLength = visibleCells * TEST_CELL_PITCH;
+        const width = vertical ? TEST_COLUMN_WIDTH : axisLength;
+        const height = vertical ? axisLength : TEST_COLUMN_WIDTH;
+        const left = CENTER_X - width * 0.5;
+        const top = CENTER_Y - height * 0.5;
 
-        this._status.size = 16;
-        this._status.textColor = 0xffffff;
-        this._status.lineSpacing = 6;
-        this._status.width = 600;
-        this._status.x = 20;
-        this._status.y = 710;
-        this.addChild(this._status);
+        const frame = new egret.Shape();
+        frame.graphics.lineStyle(2, 0x00ff88, 0.9);
+        frame.graphics.drawRect(left, top, width, height);
+        frame.graphics.lineStyle(1, 0x00ff88, 0.45);
+
+        for (let i = 1; i < visibleCells; i++) {
+            if (vertical) {
+                const y = top + i * TEST_CELL_PITCH;
+                frame.graphics.moveTo(left, y);
+                frame.graphics.lineTo(left + width, y);
+            } else {
+                const x = left + i * TEST_CELL_PITCH;
+                frame.graphics.moveTo(x, top);
+                frame.graphics.lineTo(x, top + height);
+            }
+        }
+
+        return frame;
     }
 
     // ───────────────── 操作 ─────────────────
@@ -132,22 +224,43 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
         this.refreshStatus();
     }
 
+    /** 換下一個盤面；滾動中也可以換，送出時才會用到。 */
+    private onCycleScenario(): void {
+        this._scenarioIndex =
+            (this._scenarioIndex + 1) % RESULT_SCENARIOS.length;
+        this.refreshStatus();
+    }
+
+    /** 換方向要整組重建，所以滾動中不給換。 */
+    private onCycleDirection(): void {
+        if (this._machine.spinning) {
+            return;
+        }
+
+        this._directionIndex =
+            (this._directionIndex + 1) % DIRECTIONS.length;
+        this._spinCount = 0;
+        this._stopRequested = false;
+        this.rebuildReel();
+    }
+
     /**
      * 送出正式結果。
      *
      * `stopSpin()` 吃的是**逐軸**結果，每一軸的陣列是**畫面閱讀順序**、
-     * 長度等於 visibleCellCount。此處刻意輪流送純 1×1 與含 1×3 的盤面，
-     * 後者會讓 head 停在進場 buffer（截斷盤面）。
+     * 長度等於 visibleCellCount。送出後自動跳下一個盤面，連按就能把
+     * RESULT_SCENARIOS 走一輪。
      */
     private onStop(): void {
         if (!this._machine.spinning || this._stopRequested) {
             return;
         }
 
-        const result: SymbolData[] = this._spinCount % 2 === 1
-            ? symbolDataList([73, 73, 73])
-            : symbolDataList([8, 9, 10]);
+        const scenario = RESULT_SCENARIOS[this._scenarioIndex];
+        const result: SymbolData[] = symbolDataList(scenario.ids);
 
+        this._scenarioIndex =
+            (this._scenarioIndex + 1) % RESULT_SCENARIOS.length;
         this._stopRequested = true;
         this._machine
             .stopSpin([result])
@@ -164,6 +277,8 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
         const reel = this._reel;
         const plan = reel.lastStopPlan;
         const lines = [
+            `方向 = ${DIRECTIONS[this._directionIndex].label}`
+            + `   exitTowardPositiveAxis = ${reel.exitTowardPositiveAxis}`,
             `machine.spinning = ${this._machine.spinning}`
             + `   spin = ${this._spinCount}`,
             `reel.state = ${reel.state}`
@@ -171,8 +286,12 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
             `strip = ${reel.stripCellCount} cells`
             + `   maxCellSpan = ${reel.maxCellSpan}`
             + `   firstVisibleIndex = ${reel.firstVisibleIndex}`,
-            `visible ids = [${reel.getVisibleCellSymbolIds().join(", ")}]`,
-            `groupOffset = [${reel.symbols.map(r => r.groupOffset).join(", ")}]`,
+            `visible ids  = [${reel.getVisibleCellSymbolIds().join(", ")}]`
+            + `   (可視段的每一格，畫面閱讀順序)`,
+            `visibleIcons = [${this.describeVisibleIcons()}]`
+            + `   (圖有露出來的 group，只回 head)`,
+            `groupOffset  = [${reel.symbols.map(r => r.groupOffset).join(", ")}]`,
+            `下一個盤面 = ${RESULT_SCENARIOS[this._scenarioIndex].label}`,
         ];
 
         if (plan !== undefined) {
@@ -185,6 +304,25 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
         }
 
         this._status.text = lines.join("\n");
+    }
+
+    /**
+     * 把 getVisibleIcons() 的結果印成「strip 索引:Symbol ID」。
+     *
+     * 截斷盤面上會看到索引落在 firstVisibleIndex 之外 —— 那就是 head
+     * 待在 buffer 裡、圖卻蓋進顯示區的情況。
+     */
+    private describeVisibleIcons(): string {
+        const reel = this._reel;
+        const all = reel.icons;
+
+        return reel.getVisibleIcons()
+            .map((icon) => {
+                const index = all.indexOf(icon);
+                const id = icon.data !== undefined ? icon.data.id : "?";
+                return `${index}:${id}`;
+            })
+            .join(", ");
     }
 
     private addLabel(

@@ -123,7 +123,7 @@ v3 的 `removeIdList` / `dropOutIdList` 是**可視格索引**。若沿用，框
 | 遊戲層負擔 | 要知道 group 結構 | 與 v3 介面一致 |
 | 錯誤型態 | 遊戲層丟錯 → 可當場驗證並 throw | 框架默默展開出玩家沒預期的結果 |
 
-遊戲層要取得 group 結構，現成入口是 `BaseReel.symbols`（讀 `groupOffset`）、`BaseReel.firstVisibleIndex` 與主線 doc §3.4 規劃的 `getGroupIcons()`。**`getGroupIcons()` 目前還沒有實作也沒有呼叫者**，是 Drop 的第一個相依。
+遊戲層要取得 group 結構，現成入口是 `BaseReel.symbols`（讀 `groupOffset`）、`BaseReel.firstVisibleIndex` 與 `BaseReel.getGroupIcons()`。**`getGroupIcons()` 已實作**（主線 doc §3.9），但 Drop 要動的是每格的 `cellOffset`，那在 Runtime 上不在 Icon 上 —— **還缺一個回傳 Runtime 的同組入口**（`getGroupRuntimes()`），那是 Drop 的第一個相依。
 
 ### 4.3 `groupOffset` 的推導規則撐不住 refill
 
@@ -161,7 +161,7 @@ refill 完全不是這樣 —— 一次多格、落在任意索引、資料在�
 
 ## 6. 建議的動工順序
 
-1. `getGroupIcons()`（主線 §3.4）—— Drop 的第一個相依，而且獨立於 Drop 本身可以先做
+1. `getGroupRuntimes()` —— `getGroupIcons()` 已實作（主線 §3.9），走訪邏輯現成（`ReelIconManager.getGroupIndexRange()`），只差一個回傳 Runtime 的公開入口
 2. `groupOffset` 的批次推導（§4.3）—— 把現有的單格規則抽成可以整段跑的版本
 3. 「取一整組表演資料」的公開入口（§4.5）
 4. `DropType` 與 `BaseMovement[]` 的歸屬決定（§5）

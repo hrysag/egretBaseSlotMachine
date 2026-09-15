@@ -3,6 +3,7 @@ import {
     BaseReelConfig,
     ReelIconDisplayConfig,
 } from "./Config/ReelConfig";
+import { ReelIconDirection } from "./Config/ReelIconDirection";
 import { ReelTimingConfig } from "./Config/ReelTimingConfig";
 import {
     ReelLayoutSource,
@@ -33,7 +34,13 @@ import {
     assertPositiveInteger,
 } from "../Internal/NumberAssert";
 
-export { ReelLayoutSource, ReelSymbolRuntime } from "./Data/ReelData";
+export {
+    ReelIconCell,
+    ReelIconLayout,
+    ReelLayoutSource,
+    ReelSymbolRuntime,
+} from "./Data/ReelData";
+export { ReelIconDirection } from "./Config/ReelIconDirection";
 export { SymbolData, SymbolVisualSize } from "./Data/SymbolData";
 export { ReelSymbolCellDefinition } from "./Data/ReelSymbolRegistry";
 export { ReelExpediteReason } from "./Runtime/ReelStopPlan";
@@ -1165,6 +1172,58 @@ export class BaseReel extends eui.Component {
      */
     public get icons(): BaseReelIcon[] {
         return this._iconManager.icons;
+    }
+
+    /**
+     * 取得與指定 Runtime 同組的全部 Icon，依進場端 → 退場端排列。
+     *
+     * 大於一格的 Symbol 只有 head 畫圖，follower 什麼都不畫；中獎表演
+     * 與掉落式要以整組為單位處理時由此取得。
+     *
+     * 回傳的是即時走訪的結果，**請勿保存** —— 下一次交接就會失效。
+     * 一個 group 進場或出場途中會有格子還不在 strip 上，因此
+     * **回傳格數可能少於該 Symbol 的 cellSpan**。要判斷 head 是否
+     * 在其中，用 `BaseReelIcon.isGroupHead`。
+     */
+    public getGroupIcons(
+        runtime: ReelSymbolRuntime,
+    ): BaseReelIcon[] {
+        return this._iconManager.getGroupIcons(runtime);
+    }
+
+    /**
+     * 取得圖有出現在顯示區的 Icon，依**畫面閱讀順序**排列。
+     *
+     * 判準是「該 group 在可視段裡至少擁有一格」，回傳那一組的 head
+     * —— 一個大 Symbol 只會出現一次，不會因為占三格就回三個載體。
+     *
+     * **與 `getVisibleRuntimes()` 不是同一件事。** 後者是可視段的每一格
+     * （長度恆為 visibleCellCount），截斷盤面上其中幾格是不畫圖的
+     * follower，而真正畫著圖的 head 反而在 buffer 裡、不在那份清單中。
+     * 中獎表演要拿的是本方法。
+     */
+    public getVisibleIcons(): BaseReelIcon[] {
+        const icons = this._iconManager.getVisibleIcons();
+        return this.resultEntryAtDisplayStart ? icons : icons.reverse();
+    }
+
+    /**
+     * 退場方向是否為局部座標的正向。
+     *
+     * Icon 的 head 要把大圖往退場方向延伸，但 `ReelIconLayout` 不帶
+     * 方向，所以建立 Icon 的那一方要靠這個 getter 告訴它。
+     *
+     * **不要自己從 config 的 `inverseDirection` 推導** —— 那條等式
+     * （`!inverseDirection`）是框架內部 `mapAxisToLocal()` 的慣例，
+     * 複製出去就會變成第二份方向推導。`inverseDirection` 因此不對外暴露。
+     */
+    public get exitTowardPositiveAxis(): boolean {
+        return this._iconManager.exitTowardPositiveAxis;
+    }
+
+    /** 排列軸向；Icon 要靠它決定大圖的長邊擺在哪一軸。 */
+    public get layoutType(): ReelIconDirection {
+        return this._iconManager.layoutType;
     }
 
     /** 正式結果是否由畫面閱讀順序的開頭側進場。 */

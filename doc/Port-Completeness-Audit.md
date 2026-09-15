@@ -2,7 +2,7 @@
 
 > 對象：`src/SlotMachine/Core` ↔ `D:\cocosTest\NewSlotMachine\SlotFrameWork\SlotMachine\assets\Script\SlotMachine`
 > 姊妹文件：[Slot-Base-Unit-Refactor-1x1.md](Slot-Base-Unit-Refactor-1x1.md)（主線）、[Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、[Core-Runtime-Flow.md](Core-Runtime-Flow.md)、[Drop-Module-Readiness.md](Drop-Module-Readiness.md)
-> 盤點基準：commit `fffdb75`
+> 盤點基準：commit `fffdb75`（§4 缺口 1 與 §6 順序已隨後續實作更新）
 >
 > **本文一律以「類別.成員」指路，不寫行號。**
 
@@ -10,7 +10,7 @@
 
 ## 0. 一句話
 
-**程式碼幾乎全部搬完了，真正的缺口只有四項；但「搬完」不等於「跑過」—— 實機只驗過單軸、Vertical 正向、normal 模式這一條路。**
+**程式碼幾乎全部搬完了，四個缺口都補完了（見 §4）；但「搬完」不等於「跑過」—— 實機只驗過單軸、Vertical 正向、normal 模式這一條路。**
 
 這兩件事要分開看，否則會誤判剩餘工作量。
 
@@ -75,16 +75,16 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 ---
 
-## 4. 真正的缺口：四項
+## 4. 真正的缺口：四項（全部結清）
 
 | # | 缺的東西 | Cocos 原本 | 我們現在 | 為什麼要補 |
 |---|---|---|---|---|
-| 1 | **`getGroupIcons()`** | `ReelIconManager.getIconsForRuntimes()` | 無 | 主線 §3.4 規劃過、doc 一直在引用，但從未實作。**Drop 的第一個相依**（Drop doc §6 第 1 步），也是大 Symbol 中獎表演的入口 |
-| 2 | **`getVisibleIcons()`** | `BaseReel` 與 `BaseSlotMachine` 兩層都有 | 只有 id 版（`getVisibleCellSymbolIds()` / `getAllVisibleSymbolIds()`） | 中獎表演要拿的是 Icon 不是 id。資料拿得到（`icons` + `firstVisibleIndex`），但要遊戲層自己切 |
-| 3 | **`getIntersectingSymbols()` 的 1×1 版** | 幾何判斷「與顯示區有交集」的 Symbol | 無 | 見下方 |
-| 4 | **方向的對外讀取** | `BaseReel.layoutType` / `inverseDirection` | 無（決議 28 收歸 `ReelIconManager` 獨家持有，`BaseReel` 只留 `resultEntryAtDisplayStart`） | `TestReelIcon` 現在要靠建構參數被外部告知方向（那個檔案的 JSDoc 就在講這個缺口）。Drop 也會需要 |
+| 1 | ~~**`getGroupIcons()`**~~ | `ReelIconManager.getIconsForRuntimes()` | **已補** | 走鄰居推導、回傳新陣列，兩端截斷時回傳格數可能少於 `cellSpan`。連帶做了決議 34（Icon 的輸入拆成 `ReelIconLayout` / `ReelIconCell`）。見主線 §3.9；斷言 `tests/CoreGeometry.test.ts` §8～8d |
+| 2 | ~~**`getVisibleIcons()`**~~ | `BaseReel` 與 `BaseSlotMachine` 兩層都有 | **已補**（兩層都有） | 判準見缺口 3 |
+| 3 | ~~**`getIntersectingSymbols()` 的 1×1 版**~~ | 幾何判斷「與顯示區有交集」的 Symbol | **判準已定，併入 `getVisibleIcons()`** | 「該 group 在可視段裡至少擁有一格」等價於「圖與顯示區有交集」，純索引算術，不需要幾何與 epsilon。剩下的只有要不要再開一個回傳 Runtime 的版本。見主線 §3.9 |
+| 4 | ~~**方向的對外讀取**~~ | `BaseReel.layoutType` / `inverseDirection` | **已補**，但只給 `layoutType` 與 `exitTowardPositiveAxis` | 決議 35：`inverseDirection` 刻意不暴露，避免遊戲層複製框架的座標慣例。補的過程中查出 `resultEntryAtDisplayStart` 的 Horizontal 分支是反的（移植時沒跟上 `mapAxisToLocal()` 的改動），已修，見主線 §2.5 |
 
-### 4.1 第 3 項是決議 31 造成的回頭帳
+### 4.1 第 3 項是決議 31 造成的回頭帳（已結）
 
 `getIntersectingSymbols()` 當初被歸進主線 §4 刪除清單，理由是「1×N 時代的幾何查詢」。
 
@@ -103,13 +103,13 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 也就是說：**「這張圖出現在畫面上」與「這個 runtime 在可視段裡」不再等價。** 現在沒有任何 API 問得到前者。
 
-1×1 版不必做幾何 —— 可視段往兩端各多看 `maxCellSpan - 1` 格，收集 `groupOffset === 0` 且圖會蓋進可視區的 head 即可，是索引算術。**定義要先討論**（「有交集」的判準、要不要含剛好貼邊的），所以列為待討論而非直接實作。
+1×1 版不必做幾何。**判準已定案並實作**：對可視段的每一格算 `headIndex = index - groupOffset` 去重，就是所有「圖有蓋進可視區」的 group；剛好貼邊（`stripOffset === 0` 時進場側再外面那一格）交集為零，排除。實作是 `getVisibleIcons()`（主線 §3.9），斷言在 `tests/CoreGeometry.test.ts` §9／§9b。
 
 ---
 
 ## 5. 搬完 ≠ 跑過
 
-程式碼都在，**但實機只驗過單軸、Vertical 正向、normal 模式**。下列路徑至今一次都沒執行過：
+程式碼都在，**但實機只驗過單軸、normal 模式**（四方向已補驗，見下）。下列路徑至今一次都沒執行過：
 
 | 從沒執行過 | 所在 |
 |---|---|
@@ -119,24 +119,32 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 | 聽牌 | `BaseSlotMachine.setListenReels()` / `runListenSequence()` |
 | 急停／即停 | `BaseSlotMachine.quickStop()` / `immediateStop()`、`BaseReel.requestQuickStop()` / `requestImmediateStop()` |
 | 自動旋轉 | `BaseSlotMachine.autoSpin()` / `stopAutoSpin()` |
-| 四方向 | 只跑過 Vertical 正向；Horizontal 與 `inverseDirection` 沒驗過 |
 | 停軸後重排 | `BaseReel.reconfigureStoppedLayout()` |
-| **決議 31 的退場端截斷** | 程式與斷言都有，**實機沒驗** |
 
-純 TS 斷言 77 項涵蓋的是幾何與資料流，**不涵蓋 Movement、心跳與多軸協調** —— 那幾項只能實機驗。
+**已補驗（本輪）**：決議 31 的**退場端截斷**已在瀏覽器跑過 —— 這筆實機債結清。
+
+**四方向也補驗了**：垂直正／反與水平正／反都在瀏覽器實際跑過（人工目視，測試場景的「切換方向」鈕）。水平那一支原本是壞的 —— `resultEntryAtDisplayStart` 的 Horizontal 分支反了，見主線 §2.5；修正後盤面順序正確。
+
+> 水平模式下**狀態列的 `visible ids` 不能當證據** —— 提交與讀回用同一個布林，旗標錯會互相抵銷，照樣印出送進去的盤面，只有畫面會鏡像。驗水平一定要看圖，並且送左右不對稱的盤面（例如 `8,9,10`）。
+> 另外測試素材是直式的（1×1 為 160×128、073 為 160×384），水平下會被拉伸變形，那是素材不是幾何。
+
+測試場景的 `RESULT_SCENARIOS` 可以逐一送出不完整大圖的盤面（`73,73,1` / `73,1,1` / `1,73,73` / `62,62,1` / `1,62,62`），狀態列同時印出「可視段的每一格」與 `getVisibleIcons()`，兩者在截斷盤面上的分岔看得見。
+
+純 TS 斷言 138 項涵蓋的是幾何與資料流，**不涵蓋 Movement、心跳與多軸協調** —— 那幾項只能實機驗。
 
 ---
 
 ## 6. 建議的接續順序
 
-1. **`getGroupIcons()`（缺口 1）與方向出口（缺口 4）** —— 同時是 Drop 與中獎表演的相依，不動流程、風險低，做完可以立刻用斷言鎖住
-2. **`getVisibleIcons()`（缺口 2）** —— 同上，順手
-3. **`getIntersectingSymbols()` 的 1×1 定義（缺口 3）** —— 要先討論判準
-4. **多軸** —— 其餘每一項的前提；`maxCellSpan` 統一、strip 長度一致這些決議到現在都還沒被真正驗證過
-5. Turbo 同步 / `fastMode` → 聽牌 → 急停即停 → 四方向
-6. Drop（見 [Drop-Module-Readiness.md](Drop-Module-Readiness.md) §6）
+1. ~~`getGroupIcons()`（缺口 1）~~ —— **已完成**，連帶做了決議 34
+2. ~~`getVisibleIcons()`（缺口 2）與缺口 3 的判準~~ —— **已完成**，兩層都有
+3. ~~方向出口（缺口 4）~~ —— **已完成**（決議 35），並修掉 Horizontal 的閱讀順序推導
+4. **`getGroupRuntimes()`** —— Drop 要動的是 `cellOffset`（在 Runtime 上），走訪邏輯已現成，只差公開入口
+5. **多軸** —— 其餘每一項的前提；`maxCellSpan` 統一、strip 長度一致這些決議到現在都還沒被真正驗證過
+6. Turbo 同步 / `fastMode` → 聽牌 → 急停即停
+7. Drop（見 [Drop-Module-Readiness.md](Drop-Module-Readiness.md) §6）
 
-實機驗證的債另外還有一筆：**決議 31 的退場端截斷**，程式改完之後還沒跑過瀏覽器。
+
 
 ---
 
@@ -147,3 +155,5 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 這是「不要拿 `egret clean` 當清理工具」的第二條事證 —— 第一條是它會洗掉 `bin-debug/js/main.js`。
 
 **跑完 `clean` 一定要再 `build` 一次，而且要看 `git status` 有沒有多出 `manifest.json`。**
+
+補一條：`egret build` 也會重寫根目錄 `manifest.json`，但**內容一個 byte 都沒變**，只是換行符寫成 LF 而工作區慣例是 CRLF，於是 `git status` 出現一個假的 `M`。`git checkout -- manifest.json` 即可還原，不必擔心改壞。

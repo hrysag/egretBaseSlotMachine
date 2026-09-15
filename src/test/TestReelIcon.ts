@@ -1,5 +1,5 @@
 import { BaseReelIcon } from "../SlotMachine/Core/Reel/BaseReelIcon";
-import { ReelIconLayout } from "../SlotMachine/Core/Reel/Data/ReelData";
+import { ReelIconCell } from "../SlotMachine/Core/Reel/Data/ReelData";
 import { SymbolData } from "../SlotMachine/Core/Reel/Data/SymbolData";
 import {
     getTestSymbol,
@@ -14,12 +14,18 @@ import {
  *
  * ## 為什麼要傳 exitTowardPositiveAxis
  *
- * `ReelIconLayout` 只帶 `x` / `y` / `groupOffset`，**不帶方向** ——
+ * `ReelIconLayout` 只帶 `x` / `y` / `index`，**不帶方向** ——
  * 框架刻意讓 Icon 不必知道 Reel 是垂直或水平、正向或反向。
  * 但 head 的大圖必須「往退場方向」延伸，這件事 Icon 自己算不出來，
  * 所以由建立它的那一方（知道 Reel 設定的 factory）在建構時告知。
  *
  * 這是移植後才浮現的缺口，記在這裡而不是繞過去。
+ *
+ * ## 尺寸為什麼放在 onCellChanged()
+ *
+ * 大圖的尺寸與偏移只有這一格換人時才會變，位置卻每幀都在變。
+ * 框架把兩件事拆成 `onCellChanged()`（換人才觸發）與
+ * `onLayoutChanged()`（每幀觸發），所以昂貴的計算放前者。
  */
 export class TestReelIcon extends BaseReelIcon {
 
@@ -45,7 +51,7 @@ export class TestReelIcon extends BaseReelIcon {
         this._art = art;
     }
 
-    /** 換資料時只換圖，尺寸與偏移交給 onLayoutChanged()。 */
+    /** 換資料時只換圖，尺寸與偏移交給 onCellChanged()。 */
     protected onDataChanged(
         data: SymbolData,
         previousData?: SymbolData,
@@ -60,23 +66,24 @@ export class TestReelIcon extends BaseReelIcon {
     /**
      * follower 不畫；head 畫一張 cellSpan × cellPitch 的圖，
      * 從自己這一格起往退場方向延伸。
+     *
+     * cellSpan 由框架從 ReelSymbolRegistry 取來一併帶進，
+     * 不必再查 TestSymbolTable。
      */
-    protected onLayoutChanged(layout: ReelIconLayout): void {
+    protected onCellChanged(cell: ReelIconCell): void {
         const art = this._art;
-        const data = this.data;
 
-        if (art === undefined || data === undefined) {
+        if (art === undefined) {
             return;
         }
 
-        if (layout.groupOffset !== 0) {
+        if (cell.groupOffset !== 0) {
             art.visible = false;
             return;
         }
 
-        const span = getTestSymbol(data.id).cellSpan;
         const pitch = this.cellPitch;
-        const axisLength = span * pitch;
+        const axisLength = cell.cellSpan * pitch;
 
         art.visible = true;
 

@@ -168,7 +168,7 @@ isVertical 2 + moveDis 3 + moveDir 5 + iconDis 2
 | `stopEffectDuration` | 停止效果總秒數，遊戲層排時間軸用（原本只有 `stopEffectActive` 布林） |
 | `firstVisibleIndex` | 顯示區第一格索引；沒有它，拿到 `symbols` / `icons` 也切不出可視段 |
 | `getVisibleRuntimes()` | 顯示區逐 Cell 的 Runtime |
-| `icons` | 整條 strip 的 Icon，索引與 `symbols` 對應。中獎表演需要（見主線 doc §6 的 `getGroupIcons()`） |
+| `icons` | 整條 strip 的 Icon，索引與 `symbols` 對應。中獎表演需要（配合主線 doc §3.9 的 `getGroupIcons()`） |
 
 > 這四個目前零呼叫者是正常的 —— 遊戲層還沒寫。**待整體完成後回頭巡視是否真的需要。**
 

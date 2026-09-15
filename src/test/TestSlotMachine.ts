@@ -1,4 +1,5 @@
 import { BaseSlotMachine } from "../SlotMachine/Core/BaseSlotMachine";
+import { BaseReel } from "../SlotMachine/Core/Reel/BaseReel";
 import { ReelIconDirection } from "../SlotMachine/Core/Reel/Config/ReelIconDirection";
 import { ReelLayoutSource } from "../SlotMachine/Core/Reel/Data/ReelData";
 import { SlotMachineReelTiming } from "../SlotMachine/Core/SlotMachine/Config/SlotMachineSpinConfig";
@@ -61,9 +62,19 @@ export class TestSlotMachine extends BaseSlotMachine {
     private readonly _stopEffectOutwardDuration = 0.2;
     private readonly _stopEffectReturnDuration = 0.1;
 
-    /** 本輪滾動方向；載體要靠它決定 head 的大圖往哪邊延伸。 */
-    private readonly _layoutType = ReelIconDirection.Vertical;
-    private readonly _inverseDirection = false;
+    /**
+     * 本軸的滾動方向，由場景在建構時指定。
+     *
+     * 只用來組 `BaseReel.init()` 的 config —— **不要拿它推導別的東西**。
+     * Icon 需要的「退場方向是不是正向」要向 reel 問
+     * （`reel.exitTowardPositiveAxis`），見 createIcon()。
+     */
+    public constructor(
+        private readonly _layoutType = ReelIconDirection.Vertical,
+        private readonly _inverseDirection = false,
+    ) {
+        super();
+    }
 
     /** 本模式使用的 Spin mode 名稱，場景按鈕用得到。 */
     public get normalMode(): string {
@@ -128,7 +139,7 @@ export class TestSlotMachine extends BaseSlotMachine {
         for (const reel of this.reelList) {
             reel.setInitialLayout(source);
             reel.configureIconDisplay({
-                iconFactory: () => this.createIcon(),
+                iconFactory: () => this.createIcon(reel),
             });
         }
     }
@@ -138,11 +149,16 @@ export class TestSlotMachine extends BaseSlotMachine {
      *
      * 對應 Cocos 版 `ReelIconDisplayConfig.prefab` —— 那邊給的是掛有
      * BaseReelIcon 的**載體** Prefab，美術由載體自己另外接收。
+     *
+     * 方向一律**向 reel 問**，不從自己的 _inverseDirection 推導：
+     * `!inverseDirection === 退場在正向` 是框架 mapAxisToLocal() 的
+     * 內部慣例，在遊戲層複製一份就是第二份方向推導。
      */
-    private createIcon(): TestReelIcon {
-        const vertical = this._layoutType === ReelIconDirection.Vertical;
-
-        return new TestReelIcon(!this._inverseDirection, vertical);
+    private createIcon(reel: BaseReel): TestReelIcon {
+        return new TestReelIcon(
+            reel.exitTowardPositiveAxis,
+            reel.layoutType === ReelIconDirection.Vertical,
+        );
     }
 
     private createReelTimings(

@@ -1,4 +1,5 @@
 import { BaseReel } from "./Reel/BaseReel";
+import { BaseReelIcon } from "./Reel/BaseReelIcon";
 import { SymbolData } from "./Reel/Data/SymbolData";
 import {
     ReelState,
@@ -596,6 +597,21 @@ export class BaseSlotMachine {
         return this._runtimeReels.map(
             (reel) => reel.getVisibleCellSymbolIds(),
         );
+    }
+
+    /**
+     * 取得指定軸目前圖有出現在顯示區的 Icon，依畫面閱讀順序排列。
+     *
+     * 一個大 Symbol 只回傳它的 head 一次；截斷盤面上 head 可能位於
+     * buffer 內，因此這份清單與「可視段的每一格」不等長。
+     */
+    public getVisibleIcons(reelIndex: number): BaseReelIcon[] {
+        return this.getReel(reelIndex).getVisibleIcons();
+    }
+
+    /** 聚合全部 Reel 的可見 Icon。 */
+    public getAllVisibleIcons(): BaseReelIcon[][] {
+        return this._runtimeReels.map((reel) => reel.getVisibleIcons());
     }
 
     // ───────────────── 繼承 Hook ─────────────────

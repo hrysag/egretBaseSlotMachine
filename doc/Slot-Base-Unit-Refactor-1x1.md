@@ -38,8 +38,10 @@
 | 30 | 提交結果前**拆掉**進場端沒湊滿的那一組（改寫成 1×1），**不補完**（見 §2.2.2） |
 | 31 | 截斷**兩端都要補**：進場端往佇列**末端補**、退場端往佇列**前端墊**（見 §2.3.1）。此決議推翻決議 4 |
 | 32 | **`cellSpan` 不得大於 `visibleCellCount`**。超過的話「盤面被單一 Symbol 填滿」時缺口落在哪一端無法從盤面判斷（見 §2.3.1 末段） |
+| 34 | Icon 的輸入**拆成「我在哪」與「我是什麼」兩個介面**（`ReelIconLayout` / `ReelIconCell`），後者只在值真的改變時才推；`cellSpan` 與 `displayPriority` 由框架現查 Registry 後投影過去（見 §3.9） |
+| 35 | 方向的對外出口**只給推導結果**（`exitTowardPositiveAxis` / `layoutType`），`inverseDirection` 不暴露 —— 避免遊戲層複製框架的座標慣例（見 §2.5） |
 
-> 決議 21～29 在 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、決議 33 起在 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。決議 30～32 因為屬於 group 模型本身，記在本文。
+> 決議 21～29 在 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、決議 33 在 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。決議 30～32、34、35 因為屬於 group 模型與其顯示層對應，記在本文。
 
 **不變的東西**：`cellSpan` 仍然由企劃在 `registerSymbolCells()` 填寫，格式一字不改；server 結果格式（per-cell、長度 === `visibleCellCount`）不變；`moveInterval`＝一個 Cell 的時間不變；半格 Movement 拆分不變；`targetStopTime` 的對外語意不變；座標原點與 `axisPosition` 的語意不變；**Movement 維持集中在 Reel 推進單一數值軸，Icon 不繼承 Movement**。
 
@@ -407,6 +409,55 @@ strip = maxSpan + visibleCellCount + maxSpan
 
 一律用**進場端／退場端**描述，不得出現「上／下」「左／右」。四個滾動方向共用同一套規則，方向轉換由既有的 `resultEntryAtDisplayStart` 負責。
 
+**幾何本身不含方向** —— `axis(k)` 一律往退場方向遞增，`groupOffset` 推導、交接、對齊、兩端補格全都不知道上下左右。整個框架只有**三個地方**碰方向：
+
+| 位置 | 做什麼 |
+|---|---|
+| `ReelIconManager.mapAxisToLocal()` | 軸向數值映射到 `x` 還是 `y`、正負號 |
+| `ReelIconManager.createDisplayMaskRect()` | mask 的長邊擺哪一軸 |
+| `ReelIconManager.resultEntryAtDisplayStart` | server 結果的閱讀順序要不要反轉 |
+
+#### 已修：Horizontal 的閱讀順序推導是反的
+
+第三項原本從 Cocos 版**一字不改**搬過來：
+
+```ts
+return this._layoutType === ReelIconDirection.Vertical
+    ? !this._inverseDirection
+    : this._inverseDirection;      // ← Horizontal 這一支
+```
+
+Cocos 的 `movementSign = inverse ? 1 : -1`，水平正向是往 `-x` 走，也就是**右→左**，那邊這條是對的。移植時 `mapAxisToLocal()` 重新推導成 y-down 並把水平改成**左→右**（與 `ReelIconDirection` 的 JSDoc 一致），這條卻沒跟著改，於是 Horizontal 整個反掉：盤面左右鏡像，而且 `isCommittedResultAligned()` 用的是同一個布林，所以會「自洽地停在錯的盤面」。
+
+因為四方向從沒被執行過（Port Audit §5），一直沒露面。
+
+**修法**：整條塌縮成 `return this.exitTowardPositiveAxis;`。兩者同值，因為兩個軸的閱讀順序都是從座標小的一端開始（Egret 的 y 往下、x 往右）：垂直由上而下、水平由左而右，所以「退場在正向」⟺「進場在座標小的那端」⟺「進場在閱讀順序的開頭」。
+
+#### 決議 35：方向的對外出口只給推導結果
+
+`layoutType` / `inverseDirection` 是 `BaseReelConfig` 的欄位，**遊戲層本來就有**。但 Icon 需要的是「退場方向是不是局部座標的正向」，遊戲層只能自己寫 `!inverseDirection` 推出來 —— 而那條等式的正確性依賴框架內部 `mapAxisToLocal()` 的慣例。
+
+這正是上面那個 bug 的同一種病：**同一條方向慣例存在兩份推導**，一份在框架內（`resultEntryAtDisplayStart`）、一份在遊戲層（`TestSlotMachine.createIcon()`），改了一邊另一邊靜默失效。
+
+| 對外暴露 | 理由 |
+|---|---|
+| `exitTowardPositiveAxis: boolean` | 唯一需要知道慣例的那一位。給了之後全專案只有 `mapAxisToLocal()` 一處定義「退場方向對應哪個號」 |
+| `layoutType: ReelIconDirection` | Icon 要知道長邊擺哪一軸。這是**原始設定不是推導**，還回去沒有慣例外洩的問題 |
+| **不暴露** `inverseDirection` | 它單獨沒有意義，必須配合慣例才能解讀 —— 暴露它就等於把慣例洩出去 |
+
+`BaseReel` 與 `ReelIconManager` 各有這兩個 getter；`TestSlotMachine` 仍然持有方向設定（它是設定的作者），但 `createIcon()` 改成向 reel 問：
+
+```ts
+private createIcon(reel: BaseReel): TestReelIcon {
+    return new TestReelIcon(
+        reel.exitTowardPositiveAxis,
+        reel.layoutType === ReelIconDirection.Vertical,
+    );
+}
+```
+
+驗證見 `tests/CoreGeometry.test.ts` §10／10b／10c。把修正還原之後，§10 與 §10c 會紅 6 項 —— 那條回歸是有牙齒的。
+
 ### 2.6 座標模型：維持中心原點
 
 **原點 = 顯示區中央，`axisPosition` = 該格中心。** 與現況完全相同，不改。
@@ -492,14 +543,12 @@ const stripOffset    = travelled - cellsTravelled * cellPitch;   // ∈ [0, pitc
 
 **② 掉落式需要的是分割重排，不是旋轉**（見 §2.10）。游標只能表達旋轉。
 
-另外澄清一點：環形游標並沒有多給「icon↔cell 配對固定」這個好處 —— 現有寫法兩個陣列是**一起轉**的，`_symbols[i]` ↔ `_icons[i]` 本來就一直配對著：
+另外澄清一點：環形游標並沒有多給「icon↔cell 配對固定」這個好處 —— `_symbols[i]` ↔ `_icons[i]` 本來就一直配對著。
 
-```ts
-const icon = this._icons.pop();
-this._symbols.pop();
-this._symbols.unshift(runtime);
-this._icons.unshift(icon);
-```
+> **Egret 版只轉 `_symbols`，`_icons` 完全不動。** Cocos 版是兩條一起 `pop` / `unshift`；移植後改成「Icon 是固定的槽位，第 k 格的資料每次交接後重新綁到固定待在第 k 格的那個 Icon」（`ReelIconManager.recycleExitedCell()` 只碰 `_symbols`，配對由 `syncIcon(k)` 維持）。
+>
+> 兩個推論：① 滾動期間 `ReelIconLayout.index` 對同一個 Icon 是常數；② 一次交接會讓**多數槽位的內容換人**，不是只有被回收的那一格 —— 決議 34 的觸發頻率實測就是這個原因（§3.9）。
+> 掉落式的分割重排要兩條陣列一起動，屆時 `index` 才會真的變，所以它仍然每幀重推而不由 Icon 自己記住。
 
 ### 2.10 掉落式（Drop）對位置模型的影響
 
@@ -715,7 +764,7 @@ buffer 固定 `maxSpan` 格，回傳數量恆定。但要新增 group 完整性�
 public getGroupIcons(runtime: ReelSymbolRuntime): BaseReelIcon[];
 ```
 
-回收改綁會讓任何存下來的引用立刻變髒，一律即時計算。
+回收改綁會讓任何存下來的引用立刻變髒，一律即時計算。**已實作**，語意與邊界情況見 §3.9。
 
 ### 3.5 `Reel/Internal/ReelDataFlow.ts`
 
@@ -793,23 +842,111 @@ if (difference % 2 !== 0) {
 
 ```text
 icon node       尺寸 cellPitch × cellPitch，anchor 固定在自己的中心
-  └─ 美術子物件  head：尺寸 span × cellPitch，往退場方向偏移 (span - 1) * cellPitch / 2
+  └─ 美術子物件  head：尺寸 span × cellPitch，從自己這一格起往退場方向延伸
                 follower：不顯示
 ```
 
-`applyLayout()` 需要知道自己是 head 還是 follower，所以 `ReelIconLayout` 要帶上 `groupOffset`；尺寸則由遊戲繼承類別自己查 Registry 決定，`ReelIconManager` 不再碰。
+**附帶好處**：head 綁定的那一刻就是「這組到齊了」的信號（head 一定最後進場），不需要另外發 group-complete 事件。
+
+#### 決議 34：Icon 的輸入拆成「我在哪」與「我是什麼」
+
+原本只有一個 `ReelIconLayout`，同時帶 `x` / `y` 與 `groupOffset`，由 `applyLayout()` 每幀推一次。問題是**兩種資訊的變動頻率差一個數量級**：位置每幀都變，group 歸屬只有這一格換人才變。綁在一起的結果是遊戲端的 `onLayoutChanged()` 每幀都要重算美術尺寸 —— `TestReelIcon` 實作出來就是這樣，每幀查一次 `cellSpan` 再設一次 `width` / `height` / `x` / `y`。
+
+**決議：拆成兩個介面、兩個 Hook。**
+
+```ts
+/** 我在哪 —— 每幀推。 */
+export interface ReelIconLayout {
+    readonly x: number;
+    readonly y: number;
+    readonly index: number;      // 本格在 symbols／icons 上的索引
+}
+
+/** 我是什麼 —— 只有值真的變了才推。 */
+export interface ReelIconCell {
+    readonly groupOffset: number;
+    readonly cellSpan: number;        // 由 Registry 現查
+    readonly displayPriority: number; // 由 Registry 現查
+}
+```
+
+| Hook | 觸發 | 放什麼 |
+|---|---|---|
+| `onLayoutChanged(layout)` | 每幀 | 基底已設完 `x` / `y`，一般不必覆寫 |
+| `onCellChanged(cell)` | 只在這一格的 cell 值改變時 | 換圖、改尺寸、改偏移 |
+
+同步順序固定為 `setData()` → `applyCell()` → `applyLayout()`，所以 `onCellChanged()` 內讀 `this.data` 拿到的一定是本格當下的資料。
+
+**變更偵測放在 `ReelIconManager.syncIconCell()`**，也就是 `syncIcon()` 裡面 —— push 點只有這一個，不可能漏刷新；而且值一律現查 Registry，`reconfigureStoppedLayout()` 重新註冊後會在下一次同步自動跟上。**這不違反決議 7**：決議 7 擋的是「存進 runtime 之後沒人再管」，這裡是每次同步都從唯一來源重推的投影。
+
+**實測的觸發頻率**（`tests/CoreGeometry.test.ts` §8b）：
+
+| 情境 | `onCellChanged` |
+|---|---|
+| 只推進位置、不交接 | **0 次** |
+| 一次交接、strip 全為 1×1 | **0 次**（每格的 cell 值前後相同） |
+| 一次交接、strip 含 1×2 與 1×3 | 9 格中 7 格（值真的不同的那幾格） |
+
+> 注意第三列：交接輪轉的是 `_symbols`，`_icons` **不動**，所以第 k 格的 Icon 會改為顯示原本第 k−1 格的資料 —— 多數槽位的內容都換人了。「只有被回收的那一格會重推」是錯的直覺（見 §2.9 的補註）。
+
+**`cellSpan` 為什麼由框架推給 Icon，而不是讓遊戲端自己查**：`cellSpan` 是遊戲端經由 `registerSymbolCells()` 交給框架的，框架卻沒有還給它的路徑，結果 `TestReelIcon` 得自備一份 `TestSymbolTable` 對照表。推過去之後那份平行表就只剩「哪張圖」的用途。
 
 **View 的判斷就兩行：**
 
 ```ts
-if (runtime.groupOffset === 0) {
-    // head：畫圖，尺寸 = registry.getCellSpan(id) * cellPitch
-} else {
-    // follower：不畫
+protected onCellChanged(cell: ReelIconCell): void {
+    if (cell.groupOffset !== 0) {
+        this.art.visible = false;                         // follower 不畫
+        return;
+    }
+    this.art.visible = true;
+    this.art.height = cell.cellSpan * this.cellPitch;     // 往退場方向延伸
 }
 ```
 
-**附帶好處**：head 綁定的那一刻就是「這組到齊了」的信號（head 一定最後進場），不需要另外發 group-complete 事件。
+#### `getGroupIcons()`
+
+```ts
+public getGroupIcons(runtime: ReelSymbolRuntime): BaseReelIcon[];
+```
+
+大於一格的 Symbol 只有 head 畫圖，中獎表演與掉落式要以整組為單位處理時由此取得。回收會就地改綁資料，**任何存下來的同組引用下一次交接就變髒**，所以一律即時走訪、回傳新陣列（決議 9）。
+
+**走鄰居，不用 `cellSpan` 算。** `headIndex = index - groupOffset` 加 `cellSpan` 可以一步算出範圍，但那個範圍可能落在 strip 之外 —— 一個 group 進場時 head 還沒進來、出場時 follower 已經被回收，兩端都會有格子不在陣列上。改走鄰居（**id 相同且 `groupOffset` 連續**）有三個好處：自然停在 strip 邊界、不受中途重新註冊 `cellSpan` 影響、相鄰兩個同 id 的 group 不會被黏成一組（後一組的 head 是 `0`，不等於前一格的 offset + 1）。
+
+因此**回傳格數可能少於 `cellSpan`**，那是進出場途中的正常狀態，不是錯誤。要判斷 head 在不在其中，用 `BaseReelIcon.isGroupHead`。
+
+> **兩種截斷要分清楚。** 「head 在進場 buffer、follower 在可視段」（§2.2.1 的 `1,2,0`）是相對**顯示區**的截斷，此時整組都在 strip 上，`getGroupIcons()` 會把 head 一起回傳。head 真的不存在只發生在該組還在一格一格組裝、整組都關在進場 buffer 裡的時候 —— 因為 `groupOffset <= maxCellSpan - 1` 而 `firstVisibleIndex === maxCellSpan`，所以**查詢可視段或更靠退場端的任一格，head 必定在 strip 上**。
+
+傳進來的 runtime 不在 strip 上時丟例外，不回空陣列 —— 那只可能是呼叫端存了過期引用，靜默回空會把錯誤藏起來。
+
+#### `getVisibleIcons()`
+
+```ts
+// ReelIconManager：進場端 → 退場端
+// BaseReel / BaseSlotMachine：畫面閱讀順序
+public getVisibleIcons(): BaseReelIcon[];
+```
+
+**「可視段的每一格」與「圖有露出來的 group」不是同一件事**，截斷盤面上兩者會分岔：
+
+```text
+可視 [73, 73, 1]，73 是 1×3        實機輸出（tests §9 與測試場景狀態列一致）
+ idx2 │ 73:0 │ ← head 在進場 buffer   visible ids  = [73, 73, 1]
+ ═════╪══════╡ ← 顯示區上緣           visibleIcons = [2:73, 5:1]
+ idx3 │ 73:1 │ ← follower，不畫
+ idx4 │ 73:2 │ ← follower，不畫
+ idx5 │  1:0 │
+ ═════╧══════╡
+```
+
+`getVisibleRuntimes()` 給的是 idx3~5 —— 其中兩格什麼都沒畫，而**真正畫著圖的 head 反而不在那份清單裡**。中獎表演要拿的是 `getVisibleIcons()`。
+
+**判準：該 group 在可視段裡至少擁有一格，回傳那一組的 head。** 圖正好等於 head 起算 `cellSpan` 格，所以這個條件與「圖與顯示區有交集」等價，而且是純索引算術 —— Cocos 版的 `getIntersectingSymbols()` 要做幾何比較加 `alignmentEpsilon`，1×1 之後整段消失。一個 group 只回一個載體，不會因為占三格就出現三次。
+
+**滾動中多露一格**：`stripOffset > 0` 時整條 strip 往退場方向滑了不到一格，進場側再外面那一格會有一部分露進顯示區，因此列入；`stripOffset === 0` 時它的邊緣正好貼齊上緣、交集為零，排除。判斷只需要比較 `stripOffset` 與 `0`，不需要容差。
+
+> 這一項同時把 [Port-Completeness-Audit.md](Port-Completeness-Audit.md) §4 的缺口 2 與缺口 3 一起結掉 —— 缺口 3 原本卡在「『有交集』的判準要先討論」，上面那條就是判準。剩下的只有「要不要再開一個回傳 Runtime 的版本」。
 
 ### 3.10 軸向效果設定：兩個同構介面合併成一個
 
@@ -922,7 +1059,7 @@ node temp/tests/tests/CoreGeometry.test.js
 
 > Cocos 版當初的 Phase 4 verification 用的是同一套手法，只是 stub 的對象是 `cc`。
 
-**執行結果**：77 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）。
+**執行結果**：138 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）、決議 34 與 `getGroupIcons()` 29 項（`8`～`8d`，§3.9）、`getVisibleIcons()` 在截斷盤面與滾動中 14 項（`9`／`9b`，§3.9）、四方向 18 項（`10`～`10c`，§2.5）。
 
 
 
@@ -952,7 +1089,7 @@ node temp/tests/tests/CoreGeometry.test.js
 
 - **`onHalfCellComplete` 這個對外 Callback 要不要保留？** 交接改成每整格固定執行（§3.4）之後，它與交接時機脫鉤。若沒有遊戲端在用第一個半格的時機，傾向保留 Callback 但退回單純的時間通知；待確認。
 - **`reconfigureStoppedLayout()` 的展開行為**：1×1 展開成 1×N 時，多出來的格子從哪裡取、原本那些 runtime 的 `groupOffset` 怎麼重算，還沒設計。
-- **大 Symbol 的中獎動畫／handoff**：目前只確定 `getGroupIcons()` 這個 on-demand 入口，實際動畫要掛在 head 還是另開 overlay 層沒討論。
+- **大 Symbol 的中獎動畫／handoff**：`getGroupIcons()` 這個 on-demand 入口已實作（§3.9），實際動畫要掛在 head 還是另開 overlay 層沒討論。
 - **`cellSpan <= visibleCellCount` 要不要加驗證？** 決議 32 已定下這條限制，但 `registerSymbolCells()` 與 `init()` 目前都不擋。超過時 `createExitTruncationCells()` 會靜默退回「只補進場端」，盤面被單一 Symbol 填滿時會算錯。
 - **Icon 數量對 Egret 的影響**：strip 從 `visible + 2` 變成 `visible + 2 × maxSpan`；Egret 沒有內建 Pool（見 Port Map §11），5 軸 × 11 格 = 55 個顯示物件要實測。
 - **`ReelLayoutSource` 的排列順序約定**：目前沿用 Cocos 版的資料流方向（進場端 → 退場端），實務上沒出過問題。曾評估改成畫面閱讀順序（與 Server 結果一致、企劃不必考慮滾動方向，欄位須改名 `leadingBuffer` / `trailingBuffer`，並由 `BaseReel` 做三段對調＋各自反轉的轉換），**暫不採用**，需要時再調整。

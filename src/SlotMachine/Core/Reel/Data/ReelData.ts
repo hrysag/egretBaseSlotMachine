@@ -69,18 +69,58 @@ export interface ReelSymbolRuntime {
 }
 
 /**
- * View 將 Reel 的一維軸向位置映射完成後，交給 Icon 的局部座標。
+ * 「我在哪」—— 每一幀都會重新推給 Icon。
  *
  * BaseReelIcon 不需要知道 Reel 是水平、垂直、正向或反向；
- * 方向與座標轉換由整軸的 View 統一處理。
+ * 方向與座標轉換由 ReelIconManager 統一處理完才送過來。
  *
- * 尺寸不在這裡 —— Icon 載體恆為 1×1，head 的大圖由遊戲繼承類別
- * 自行查 Registry 決定尺寸與偏移。
+ * 尺寸與 group 歸屬不在這裡 —— 那些只有換人才變，走 ReelIconCell。
  */
 export interface ReelIconLayout {
     readonly x: number;
     readonly y: number;
 
+    /**
+     * 本格在 `BaseReel.symbols` / `BaseReel.icons` 上的索引。
+     *
+     * 滾動期間不變 —— 輪轉的是 `_symbols`，Icon 陣列本身不動，
+     * 第 k 格的資料每次交接後重新綁到固定待在第 k 格的那個 Icon。
+     * 未來的掉落式會分割重排兩條陣列，屆時才會變動，因此這個值
+     * 每幀都由 ReelIconManager 重推，不由 Icon 自己記住。
+     *
+     * 有了它，Icon 自己就算得出 head 在哪：
+     * `headIndex = layout.index - cell.groupOffset`。
+     * 但要取整組請用 `BaseReel.getGroupIcons()` —— head 尚未進場時
+     * headIndex 會是負數，直接拿去 `Array.slice()` 會從陣列尾端倒數。
+     */
+    readonly index: number;
+}
+
+/**
+ * 「我是什麼」—— 只有這一格換人才會重新推給 Icon。
+ *
+ * 位置每幀都在變，但「我是 head 還是 follower、這組多長、要畫在第幾層」
+ * 只有交接把新資料綁上來時才變。分成兩個介面，遊戲端昂貴的換圖與
+ * 改尺寸才不必每幀重算一次。
+ *
+ * 三個欄位都是投影，不是第二份真相：`groupOffset` 來自
+ * `ReelSymbolRuntime`，`cellSpan` 與 `displayPriority` 每次都由
+ * `ReelSymbolRegistry` 重新取得，因此 registry 中途被重新註冊時
+ * 會在下一次同步自動跟上。
+ */
+export interface ReelIconCell {
     /** 同 ReelSymbolRuntime.groupOffset；`0` 為 head，大於 `0` 為 follower。 */
     readonly groupOffset: number;
+
+    /**
+     * 本格所屬 group 應該占幾格。
+     *
+     * head 據此決定大圖尺寸（`cellSpan * cellPitch`，往退場方向延伸）。
+     * 這是「應該」的長度，不是「目前 strip 上有幾格」—— 一個 group
+     * 進場或出場時會有幾格還在 strip 外。
+     */
+    readonly cellSpan: number;
+
+    /** 同一軸 Icon 容器內的繪製排序權重；未註冊時為 0。 */
+    readonly displayPriority: number;
 }

@@ -1,4 +1,4 @@
-import { ReelIconLayout } from "./Data/ReelData";
+import { ReelIconCell, ReelIconLayout } from "./Data/ReelData";
 import { SymbolData } from "./Data/SymbolData";
 import {
     assertFiniteNumber,
@@ -15,10 +15,23 @@ import {
  *
  * 載體**永遠是 1×1**，`anchorOffset` 永遠是 `cellPitch / 2` —— 不隨資料變動。
  * 大於一格的 Symbol 不是把載體撐大，而是由 group 的 head 在自己的子物件上
- * 畫一張 `cellSpan × cellPitch` 的圖，往退場方向偏移 `(cellSpan - 1) / 2` 格。
+ * 畫一張 `cellSpan × cellPitch` 的圖，往退場方向延伸。
  *
  * 這樣「Runtime 是 1×1」一路貫徹到顯示層，也讓 Egret 的
  * `anchorOffset` 變成常數，沒有東西可以忘記重設。
+ *
+ * ## 兩個 Hook 的分工
+ *
+ * ```text
+ * onCellChanged(cell)     我是什麼：head/follower、這組多長、第幾層
+ *                         只有這格換人才觸發     ← 換圖、改尺寸放這裡
+ *
+ * onLayoutChanged(layout) 我在哪：x / y / index
+ *                         每一幀都觸發           ← 基底已設完 x/y，通常不必覆寫
+ * ```
+ *
+ * 同步順序固定為 `setData()` → `applyCell()` → `applyLayout()`，
+ * 所以 `onCellChanged()` 內讀 `this.data` 拿到的一定是本格當下的資料。
  *
  * ## 本類別不做的事
  *
@@ -28,6 +41,7 @@ import {
 export class BaseReelIcon extends eui.Component {
     private _data?: SymbolData;
     private _layout?: ReelIconLayout;
+    private _cell?: ReelIconCell;
     private _cellPitch = 0;
 
     /** Icon 目前綁定的原始 SymbolData 參考。 */
@@ -35,9 +49,14 @@ export class BaseReelIcon extends eui.Component {
         return this._data;
     }
 
-    /** 最近一次套用的局部座標與 group 歸屬。 */
+    /** 最近一次套用的局部座標與 strip 索引。 */
     public get layout(): ReelIconLayout | undefined {
         return this._layout;
+    }
+
+    /** 最近一次套用的 group 歸屬與顯示屬性。 */
+    public get cell(): ReelIconCell | undefined {
+        return this._cell;
     }
 
     /** 一個 1×1 Cell 的軸向長度。 */
@@ -47,8 +66,8 @@ export class BaseReelIcon extends eui.Component {
 
     /** 本格是否為 group 的 head（負責顯示整張圖）。 */
     public get isGroupHead(): boolean {
-        return this._layout !== undefined
-            && this._layout.groupOffset === 0;
+        return this._cell !== undefined
+            && this._cell.groupOffset === 0;
     }
 
     /**
@@ -87,10 +106,21 @@ export class BaseReelIcon extends eui.Component {
     }
 
     /**
+     * 套用本格的 group 歸屬與顯示屬性。
+     *
+     * ReelIconManager 只在值真的變了才呼叫，所以覆寫
+     * `onCellChanged()` 做換圖、改尺寸這類昂貴的事是安全的。
+     */
+    public applyCell(cell: ReelIconCell): void {
+        this.validateCell(cell);
+        this._cell = cell;
+        this.onCellChanged(cell);
+    }
+
+    /**
      * 套用由 ReelIconManager 完成方向映射後的局部座標。
      *
-     * `groupOffset` 一併帶進來，遊戲類別據此決定要畫整張圖（head）
-     * 還是什麼都不畫（follower）。
+     * 每一幀都會被呼叫；只設位置，不碰尺寸與內容。
      */
     public applyLayout(layout: ReelIconLayout): void {
         this.validateLayout(layout);
@@ -105,6 +135,7 @@ export class BaseReelIcon extends eui.Component {
         const previousData = this._data;
         this._data = undefined;
         this._layout = undefined;
+        this._cell = undefined;
         this.onResetIcon(previousData);
     }
 
@@ -121,8 +152,8 @@ export class BaseReelIcon extends eui.Component {
     /**
      * SymbolData 變更 Hook。
      *
-     * 注意：此時 `layout` 可能還是上一次的值。需要同時依據資料與
-     * group 歸屬決定外觀時，請在 onLayoutChanged() 內處理。
+     * 注意：此時 `cell` 與 `layout` 都還是上一次的值。需要同時依據
+     * 資料與 group 歸屬決定外觀時，請在 onCellChanged() 內處理。
      */
     protected onDataChanged(
         data: SymbolData,
@@ -132,21 +163,30 @@ export class BaseReelIcon extends eui.Component {
     }
 
     /**
-     * 座標與 group 歸屬套用完成 Hook。
+     * group 歸屬或顯示屬性變更 Hook。
      *
+     * 只有這一格換人才觸發，`this.data` 此時已是新資料。
      * 典型的遊戲實作：
      * ```ts
-     * protected onLayoutChanged(layout: ReelIconLayout): void {
-     *     if (layout.groupOffset !== 0) {
+     * protected onCellChanged(cell: ReelIconCell): void {
+     *     if (cell.groupOffset !== 0) {
      *         this.art.visible = false;      // follower 不畫
      *         return;
      *     }
-     *     const span = registry.getCellSpan(this.data.id);
      *     this.art.visible = true;
-     *     this.art.height = span * this.cellPitch;
-     *     this.art.y = (span - 1) * this.cellPitch * 0.5;  // 往退場方向偏移
+     *     this.art.height = cell.cellSpan * this.cellPitch;   // 往退場方向延伸
      * }
      * ```
+     */
+    protected onCellChanged(cell: ReelIconCell): void {
+        // 基礎載體不假設實際顯示方式。
+    }
+
+    /**
+     * 座標套用完成 Hook。
+     *
+     * 每一幀觸發，基底類別已經設完 `x` / `y`，一般不需要覆寫。
+     * 需要依位置做額外表現（例如進出場淡入）時才用得上。
      */
     protected onLayoutChanged(layout: ReelIconLayout): void {
         // 基礎載體已完成自身的位置更新。
@@ -167,12 +207,35 @@ export class BaseReelIcon extends eui.Component {
         assertFiniteNumber(layout.x, "ReelIconLayout.x");
         assertFiniteNumber(layout.y, "ReelIconLayout.y");
 
-        if (
-            !Number.isInteger(layout.groupOffset)
-            || layout.groupOffset < 0
-        ) {
+        if (!Number.isInteger(layout.index) || layout.index < 0) {
             throw new Error(
-                "ReelIconLayout.groupOffset must be a non-negative integer.",
+                "ReelIconLayout.index must be a non-negative integer.",
+            );
+        }
+    }
+
+    private validateCell(cell: ReelIconCell): void {
+        if (cell === null || cell === undefined) {
+            throw new Error(
+                "BaseReelIcon.applyCell() requires ReelIconCell.",
+            );
+        }
+
+        if (!Number.isInteger(cell.groupOffset) || cell.groupOffset < 0) {
+            throw new Error(
+                "ReelIconCell.groupOffset must be a non-negative integer.",
+            );
+        }
+
+        if (!Number.isInteger(cell.cellSpan) || cell.cellSpan <= 0) {
+            throw new Error(
+                "ReelIconCell.cellSpan must be a positive integer.",
+            );
+        }
+
+        if (!Number.isInteger(cell.displayPriority)) {
+            throw new Error(
+                "ReelIconCell.displayPriority must be an integer.",
             );
         }
     }
