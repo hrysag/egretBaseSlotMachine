@@ -55,6 +55,36 @@ export class ReelStopFlow {
         return this._visibleResult !== undefined;
     }
 
+    /**
+     * 尚未提交的結果會在自己前面墊幾格（退場端截斷的鏡像補格）。
+     *
+     * Turbo 同步補牌在 `BaseSlotMachine.stopSpin()` 內、`commitResult()`
+     * 之後立刻決定，但那時 `commitResult()` 只把結果記進本類別，**一格
+     * 資料都還沒寫進佇列** —— 真正墊格要等到下一個 Cell 邊界的
+     * `tryCommitResultAtHandoff()`。所以補牌決策看不到這幾格，各軸墊的
+     * 數量不同時就會失步（實測 360 組，誤差精確等於墊格數）。
+     *
+     * 這裡先算出來給 `BaseReel.calculateQuickStopHalfCellCount()` 用，
+     * 走的是與 `tryCommitResultAtHandoff()` **同一個**
+     * `countExitTruncationCells()`，不會產生第二份推導。
+     *
+     * 進場端截斷的補格**不算** —— 那幾格接在結果後面，盤面對齊之後才
+     * 進場，不影響停輪時間（實測 `[7,7,1]`／`[7,1,1]` 皆無延遲）。
+     */
+    public get pendingExitTruncationCellCount(): number {
+        const visibleResult = this._visibleResult;
+
+        if (visibleResult === undefined) {
+            return 0;
+        }
+
+        return this._dataFlow.countExitTruncationCells(
+            visibleResult,
+            this._reverseResultEntry,
+            this._cellSpanResolver,
+        );
+    }
+
     public get targetStopTime(): number | undefined {
         return this._targetStopTime;
     }

@@ -49,8 +49,12 @@ export interface BaseReelConfig {
      * 進場／退場 buffer 各自的 Cell 數。
      *
      * 未設定時由 ReelSymbolRegistry 已註冊的最大 cellSpan 推得。
-     * **多軸請明確指定** —— 否則某一軸的牌庫剛好沒有大牌時，該軸的
-     * strip 會比其他軸短，Turbo 同步停輪的幾何前提就不成立。
+     * 各軸不必一致 —— Turbo 同步是把剩餘的半格數補齊，幾何差異會被
+     * 補牌吸收（實測見主線 doc §2.4 的更正）。真正必須一致的是
+     * fastMode 各軸的 moveInterval，那由 BaseSlotMachine 守門。
+     *
+     * 仍然建議明寫：讓某一軸的牌庫剛好沒有大牌時，strip 長度不會
+     * 隨牌庫悄悄改變，排錯時比較好對照。
      */
     readonly maxCellSpan?: number;
 

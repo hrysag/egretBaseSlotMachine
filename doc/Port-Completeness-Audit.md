@@ -113,15 +113,17 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 | 從沒執行過 | 所在 |
 |---|---|
-| **多軸**（`reelList.length > 1`） | `BaseSlotMachine.startDueReels()` 的錯開啟動；`TestSlotMachine.createReelTimings()` 的 `staggerStart` 從來沒生效 |
-| `fastMode`（同步啟動分支） | `BaseSlotMachine.startSpin()` |
-| **Turbo 同步停輪** | `BaseSlotMachine.prepareFastQuickStopPadding()`、`ReelDataFlow.insertPerformanceCellsBeforeResult()`，整條沒跑過 |
+| **多軸**（實機） | 純 TS 斷言已涵蓋錯開啟動、fastMode、鎖軸與停輪順序（`tests` §11～11e），但**瀏覽器沒跑過**；`TestSlotMachine.createReelTimings()` 的 `staggerStart` 在場景裡仍未生效 |
 | 聽牌 | `BaseSlotMachine.setListenReels()` / `runListenSequence()` |
-| 急停／即停 | `BaseSlotMachine.quickStop()` / `immediateStop()`、`BaseReel.requestQuickStop()` / `requestImmediateStop()` |
+| 即停 | `BaseSlotMachine.immediateStop()`、`BaseReel.requestImmediateStop()`（急停兩個順序已由 §11i／§11j 涵蓋） |
 | 自動旋轉 | `BaseSlotMachine.autoSpin()` / `stopAutoSpin()` |
 | 停軸後重排 | `BaseReel.reconfigureStoppedLayout()` |
 
-**已補驗（本輪）**：決議 31 的**退場端截斷**已在瀏覽器跑過 —— 這筆實機債結清。
+**已補驗**：決議 31 的**退場端截斷**已在瀏覽器跑過 —— 這筆實機債結清。
+
+**Turbo 同步的補牌盲點已修，兩個進入順序各一個成因**（主線 §3.6）：各軸退場端墊的格數不同時 Turbo 根本不同步，失步量精確等於墊格數。「玩家先按」是看不到還沒提交的墊格；「結果先到」是墊格被併進結果區段、`_resultStartIndex` 指的不是本體。1080 組驗算。這條是 1016 沒有的功能（它的 `fastStopRoll()` 逐軸砍到不同的保留數，本來就沒同時停），所以那邊沒這個 bug。
+
+**停輪時間的柵欄錯誤已修**（主線 §3.7）：`calculateResultEntryHalfCellCount()` 把交接次數當時間用，導致實際停輪比要求早約一格。252 組參數組合實測，修正後 `realized === plan.actualStopTime`。這是多軸斷言建起來之後第一個被抓到的真 bug。
 
 **四方向也補驗了**：垂直正／反與水平正／反都在瀏覽器實際跑過（人工目視，測試場景的「切換方向」鈕）。水平那一支原本是壞的 —— `resultEntryAtDisplayStart` 的 Horizontal 分支反了，見主線 §2.5；修正後盤面順序正確。
 
@@ -130,7 +132,7 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 測試場景的 `RESULT_SCENARIOS` 可以逐一送出不完整大圖的盤面（`73,73,1` / `73,1,1` / `1,73,73` / `62,62,1` / `1,62,62`），狀態列同時印出「可視段的每一格」與 `getVisibleIcons()`，兩者在截斷盤面上的分岔看得見。
 
-純 TS 斷言 138 項涵蓋的是幾何與資料流，**不涵蓋 Movement、心跳與多軸協調** —— 那幾項只能實機驗。
+純 TS 斷言 175 項。決議 37 把推進抽成 `update(deltaTime)` 之後，**機台層的時序也進了斷言範圍**（測試子類別覆寫 `startTicking()`，完全不碰引擎，時間是決定性的）。仍然不涵蓋的是真實 frame pacing、rAF 節流與實際算繪 —— 那些只能實機驗。
 
 ---
 
@@ -140,7 +142,7 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 2. ~~`getVisibleIcons()`（缺口 2）與缺口 3 的判準~~ —— **已完成**，兩層都有
 3. ~~方向出口（缺口 4）~~ —— **已完成**（決議 35），並修掉 Horizontal 的閱讀順序推導
 4. **`getGroupRuntimes()`** —— Drop 要動的是 `cellOffset`（在 Runtime 上），走訪邏輯已現成，只差公開入口
-5. **多軸** —— 其餘每一項的前提；`maxCellSpan` 統一、strip 長度一致這些決議到現在都還沒被真正驗證過
+5. **多軸實機** —— 斷言已涵蓋時序與守門（§11～11h）；還缺瀏覽器實跑（場景仍是單軸，`staggerStart` 未生效）
 6. Turbo 同步 / `fastMode` → 聽牌 → 急停即停
 7. Drop（見 [Drop-Module-Readiness.md](Drop-Module-Readiness.md) §6）
 

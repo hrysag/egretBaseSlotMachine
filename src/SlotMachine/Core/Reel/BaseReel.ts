@@ -106,6 +106,21 @@ export class BaseReel extends eui.Component {
 
     private readonly _iconManager = new ReelIconManager();
 
+    /**
+     * Icon 的直接容器。
+     *
+     * 刻意**不用 BaseReel 自己**當容器：eui 系的容器會在每次子項增刪時
+     * 強制 `invalidateSize()` + `invalidateDisplayList()`
+     * （`UIComponent.ts` 的 implementUIComponent，`eui.Component` 與
+     * `eui.Group` 都是 isContainer = true），而 `setChildIndex()` 會
+     * 同時觸發兩者 —— displayPriority 重排正是靠它。
+     *
+     * 普通 `DisplayObjectContainer` 的同名方法是空實作，所以把 Icon 收在
+     * 這一層之後，重排不再產生任何測量。這一層只在建立時加一次，
+     * 之後不動；mask 仍然設在 BaseReel（或機台）上，照樣夾住整棵子樹。
+     */
+    private _iconLayer?: egret.DisplayObjectContainer;
+
     private readonly _dataFlow = new ReelDataFlow();
 
     private readonly _symbolRegistry = new ReelSymbolRegistry();
@@ -381,7 +396,15 @@ export class BaseReel extends eui.Component {
             );
         }
 
-        this._iconManager.initializeIcons(this, config.iconFactory);
+        if (this._iconLayer === undefined) {
+            this._iconLayer = new egret.DisplayObjectContainer();
+            this.addChild(this._iconLayer);
+        }
+
+        this._iconManager.initializeIcons(
+            this._iconLayer,
+            config.iconFactory,
+        );
     }
 
     /** 移除 Icon 空殼，保留純數值 strip。 */
@@ -816,18 +839,31 @@ export class BaseReel extends eui.Component {
     }
 
     /**
-     * 正式結果從下一次交接起，還要幾個半 Cell 才能完整對齊。
+     * 正式結果從本次 commit 邊界起，還要**經過**幾個半 Cell 才會對齊。
      *
-     * 與 calculateQuickStopHalfCellCount() 同一條算式，差別在於
-     * 這裡是「結果即將排入佇列」的時點，前方尚未消耗的表演資料
-     * 會被本次 commit 取代，因此不計入。
+     * 回傳的是**時間**（半 Cell 數），不是交接次數 —— 兩者差一。
+     * 結果的第一格要從 idx0 走到可視段最外格，共需
+     * `firstVisibleIndex + visibleCellCount` 次交接；但其中**第一次與
+     * commit 同刻發生**（`_secondHalfCompleteHandler` 是
+     * `tryCommitResultAtBoundary()` 緊接 `drainPendingHandoffs()`），
+     * 不佔用時間，所以只跨過 `次數 - 1` 個 moveInterval。
+     *
+     * 呼叫端 `ReelStopFlow.tryCommitResultAtHandoff()` 兩個用途都是時間：
+     * `directResultStopTime` 直接乘 halfCellDuration，
+     * `performanceCellBudget` 由剩餘時間扣掉它再折成整數格。
+     * 所以這裡回傳時間語意，一處改好兩邊都正確。
+     *
+     * > 少減這個 1 會讓 earliestStopTime 晚報一格、表演牌少補一格，
+     * > 實際停輪因而比要求的時間早約一格。252 組參數組合實測，
+     * > 差距固定為一個 moveInterval，與 maxCellSpan／可視格數／
+     * > moveInterval／目標時間都無關。
      */
     private calculateResultEntryHalfCellCount(): number {
-        const travelCells =
+        const handoffCells =
             this._iconManager.firstVisibleIndex
             + this._iconManager.visibleCellCount;
 
-        return travelCells * 2;
+        return (handoffCells - 1) * 2;
     }
 
     /**
@@ -968,22 +1004,39 @@ export class BaseReel extends eui.Component {
      *   = 結果之前尚未消耗的格數        （k）
      *   + 1                            （把結果第一格帶進 index 0）
      *   + firstVisibleIndex + visible - 1（從 index 0 推到顯示區最後一格）
+     *   + 結果尚未提交時會墊在它前面的格數（退場端截斷的鏡像補格）
      * ```
      *
      * 再乘 2 換成 half-Cell；若目前停在半格上（stripOffset > 0），
      * 當前這一格只剩一個半格要走，因此扣 1。
+     *
+     * ## 最後一項為什麼非加不可
+     *
+     * Turbo 同步補牌在 `BaseSlotMachine.stopSpin()` 內、`commitResult()`
+     * 之後立刻決定，而那時結果還沒寫進佇列（見
+     * [Core-Runtime-Flow.md](../../../../doc/Core-Runtime-Flow.md) §1.1）。
+     * 少了這一項，退場端截斷要墊幾格就看不見 —— 各軸墊的數量不同時
+     * 補牌會算成 0，Turbo 根本不同步。
+     *
+     * 實測 360 組（maxCellSpan 3/4 × 可視 3/4/5 × 各 10 種盤面 ×
+     * moveInterval 3 種 × quickStop 時機 2 種）：加上這一項之前，誤差
+     * **精確等於墊格數**（墊 0/1/2 → 誤差 0/1/2 格）；加上之後殘差只
+     * 剩次格量化，而且**與盤面無關、只隨相位變動** —— fastMode 各軸
+     * 同時啟動且 moveInterval 相同（由 `assertUniformMoveInterval()`
+     * 守門），殘差因此各軸一致，相減即歸零。
      */
     public calculateQuickStopHalfCellCount(): number {
         this.assertInitialized();
 
         const pendingBeforeResult =
-            this._dataFlow.pendingCellCountBeforeResult();
+            this._dataFlow.pendingCellCountBeforeResultBody();
         const travelCells =
             pendingBeforeResult
             + 1
             + this._iconManager.firstVisibleIndex
             + this._iconManager.visibleCellCount
-            - 1;
+            - 1
+            + this._stopFlow.pendingExitTruncationCellCount;
         const halfCells = travelCells * 2;
 
         return this._iconManager.stripOffset > 0

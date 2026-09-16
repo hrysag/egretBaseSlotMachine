@@ -36,6 +36,16 @@ export class ReelDataFlow {
     private _performanceDataReadIndex = 0;
     private _resultStartIndex = -1;
     private _resultEndIndex = -1;
+
+    /**
+     * 結果區段開頭那幾格「退場端截斷的墊格」。
+     *
+     * 它們比結果本體更早進場，但被併在 resultSegment 裡，所以
+     * `_resultStartIndex` 指向的是墊格而不是結果本體。停輪行程要算到
+     * 本體，因此得把這個數字記下來 —— 算完就丟的話，提交之後就再也
+     * 問不出「還要先走幾格才輪到結果」。
+     */
+    private _resultExitPadCellCount = 0;
     private _spinId = 0;
 
     /** 保留既有 BaseReel.dataList 公開 API 所需的資料列表。 */
@@ -269,6 +279,7 @@ export class ReelDataFlow {
             - requiredTail.length;
         this._resultEndIndex =
             this._resultStartIndex + resultSegment.length;
+        this._resultExitPadCellCount = exitTruncationCells.length;
 
         return retainedPerformanceCells.length;
     }
@@ -306,6 +317,28 @@ export class ReelDataFlow {
         return Math.max(
             0,
             this._resultStartIndex - this._dataList.readIndex,
+        );
+    }
+
+    /**
+     * 還要消耗幾格才輪到**結果本體**的第一格。
+     *
+     * 與 `pendingCellCountBeforeResult()` 差在退場端的墊格：那幾格被併
+     * 在 resultSegment 的開頭，所以 `_resultStartIndex` 指的是墊格而不是
+     * 本體。停輪行程要算到本體，用這個；**砍除範圍不能用這個** ——
+     * `skipPendingPerformanceData()` 只能砍到 `_resultStartIndex`，墊格
+     * 砍掉盤面就壞了。兩個計數刻意分開，不要合併。
+     */
+    public pendingCellCountBeforeResultBody(): number {
+        if (!this.resultCommitted) {
+            return 0;
+        }
+
+        return Math.max(
+            0,
+            this._resultStartIndex
+            + this._resultExitPadCellCount
+            - this._dataList.readIndex,
         );
     }
 
@@ -397,6 +430,7 @@ export class ReelDataFlow {
         this._committedResult.length = 0;
         this._resultStartIndex = -1;
         this._resultEndIndex = -1;
+        this._resultExitPadCellCount = 0;
     }
 
     /**

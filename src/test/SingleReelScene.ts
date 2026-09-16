@@ -138,7 +138,7 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
     private rebuildReel(): void {
         if (this._machine !== undefined) {
             this._machine.cleanup();
-            this.removeChild(this._reel);
+            this.removeChild(this._machine);
             this.removeChild(this._frame);
         }
 
@@ -164,14 +164,18 @@ export class SingleReelScene extends egret.DisplayObjectContainer {
             this.refreshStatus();
         };
 
-        this._reel.x = CENTER_X;
-        this._reel.y = CENTER_Y;
-        this._reel.mask =
-            this._reel.createDisplayMaskRect(TEST_COLUMN_WIDTH);
+        /*
+         * Reel 已經被 machine.init() 收成子項，留在機台原點即可；
+         * 擺位與遮罩都由機台負責，整台共用一個變換節點。
+         */
+        this._machine.x = CENTER_X;
+        this._machine.y = CENTER_Y;
+        this._machine.mask =
+            this._machine.createDisplayMaskRect(TEST_COLUMN_WIDTH);
 
         this._frame = this.createFrame();
 
-        this.addChild(this._reel);
+        this.addChild(this._machine);
         this.addChild(this._frame);
         this.refreshStatus();
     }

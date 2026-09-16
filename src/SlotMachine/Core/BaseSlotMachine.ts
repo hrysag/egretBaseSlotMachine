@@ -26,18 +26,35 @@ interface PendingReelStart {
  *
  * 只協調多軸，不改寫 BaseReel 的單軸運動規則。
  *
+ * ## 顯示層上的位置
+ *
+ * 繼承 `eui.Component`，對應 Cocos 版掛在 Node 上的 `Component` ——
+ * 機台本身就是場景樹的一員，`init()` 會把傳進來的 Reel 收成自己的子項。
+ * 於是整台共用一個變換節點（平移、解析度縮放、震動），顯示區遮罩也蓋在
+ * 機台上而不是逐軸各蓋一個。
+ *
+ * 選 `eui.Component` 而非 `egret.DisplayObjectContainer`：它是唯一吃得下
+ * `skinName` 的類別，也是能出現在 Egret UI Editor「Custom」面板的前提，
+ * 對應規劃中的 SlotMachineSkin.exml。
+ *
  * ## 與 Cocos 版的兩個結構差異
  *
- * 1. **不是 Component，而且擁有唯一的心跳。** Egret 沒有 Component 的
- *    update()，因此由本類別註冊一個 `egret.startTick` 並自行換算
- *    deltaTime，再推進所有 Reel。全場只有這一個心跳。
+ * 1. **擁有唯一的心跳。** Egret 沒有 Component 的 update()，因此由本類別
+ *    註冊一個 `egret.startTick` 並自行換算 deltaTime，再推進所有 Reel。
+ *    全場只有這一個心跳。推進本身抽在 `update(deltaTime)`，心跳只是預設
+ *    的那層殼 —— 遊戲要用自己的迴圈驅動時，覆寫 `startTicking()` 關掉即可。
  * 2. **錯開啟動改用同一個時間累積器。** Cocos 版用 `scheduleOnce`，
  *    那是與 Movement 不同的時間源；Turbo 同步停輪對相位敏感，
  *    兩個時間源會讓各軸相位不可預測。
  */
-export class BaseSlotMachine {
-    /** 背景分頁恢復後 rAF 會補一個巨大的 deltaTime，必須鉗制。 */
-    private static readonly MAX_DELTA_TIME = 0.1;
+export class BaseSlotMachine extends eui.Component {
+    /**
+     * 背景分頁恢復後 rAF 會補一個巨大的 deltaTime，必須鉗制。
+     *
+     * 鉗制由驅動端負責 —— 內建心跳已套用；外部驅動請沿用此值。
+     * `update()` 本身不鉗，否則 `update(0.5)` 會靜默只前進 0.1。
+     */
+    public static readonly MAX_DELTA_TIME = 0.1;
 
     private _inited = false;
     private readonly _spinConfigs =
@@ -116,6 +133,7 @@ export class BaseSlotMachine {
 
         this.validateReels(reels);
         this._runtimeReels = [...reels];
+        this.adoptReels();
 
         try {
             this.registerInitialReelData();
@@ -147,6 +165,36 @@ export class BaseSlotMachine {
         this._spinConfigs.set(mode, snapshot);
     }
 
+    /**
+     * 把 Reel 收成自己的子項。
+     *
+     * 已經是子項的就不動（exml skin 產生的 Reel 本來就掛好了）；
+     * 掛在別處的會被接管 —— 整台共用一個變換節點與一個遮罩，
+     * 前提就是 Reel 全部在機台底下。
+     */
+    private adoptReels(): void {
+        for (const reel of this._runtimeReels) {
+            if (reel.parent !== this) {
+                this.addChild(reel);
+            }
+        }
+    }
+
+    /**
+     * 產生整台顯示區的裁切矩形；交由呼叫端指定給 `mask`。
+     *
+     * 沿軸長度取各軸共用的 `visibleCellCount × cellPitch`（多軸幾何
+     * 必須一致）；跨軸長度由呼叫端給，因為那取決於各軸的擺放與美術
+     * 寬度，屬於場景／skin 的佈局，框架不知道。
+     *
+     * 矩形以機台原點為中心，所以各軸請對稱擺在原點兩側。
+     * 需要逐軸各自遮罩時改用 `BaseReel.createDisplayMaskRect()`。
+     */
+    public createDisplayMaskRect(crossSize: number): egret.Rectangle {
+        this.assertInitialized();
+        return this._runtimeReels[0].createDisplayMaskRect(crossSize);
+    }
+
     // ───────────────── 心跳 ─────────────────
 
     /**
@@ -159,15 +207,28 @@ export class BaseSlotMachine {
     private readonly _tickHandler = (timeStamp: number): boolean => {
         const rawDelta = (timeStamp - this._lastTimeStamp) / 1000;
         this._lastTimeStamp = timeStamp;
-
-        if (!(rawDelta > 0)) {
-            return false;
-        }
-
-        const deltaTime = Math.min(
-            rawDelta,
-            BaseSlotMachine.MAX_DELTA_TIME,
+        this.update(
+            Math.min(rawDelta, BaseSlotMachine.MAX_DELTA_TIME),
         );
+        return false;
+    };
+
+    /**
+     * 推進一幀；`deltaTime` 單位是秒。
+     *
+     * 這是機台層唯一的推進入口，與 `BaseReel.updateMovement()` 同一個
+     * 形狀 —— 「時間從哪來」不是本類別的責任。預設由內建心跳呼叫；
+     * 遊戲若有自己的 update pipeline，覆寫 `startTicking()` 關掉內建
+     * 心跳後自行呼叫即可。
+     *
+     * **上限鉗制由呼叫端負責**（見 `MAX_DELTA_TIME`）。本方法不鉗，
+     * 因為那是時間源的性質而非推進邏輯的性質，鉗在這裡會讓
+     * `update(0.5)` 靜默只前進 0.1。
+     */
+    public update(deltaTime: number): void {
+        if (!(deltaTime > 0)) {
+            return;
+        }
 
         if (this._spinning) {
             this._spinElapsed += deltaTime;
@@ -183,11 +244,15 @@ export class BaseSlotMachine {
                 reel.updateMovement(deltaTime);
             }
         }
+    }
 
-        return false;
-    };
-
-    private startTicking(): void {
+    /**
+     * 註冊內建心跳。
+     *
+     * 覆寫成不做事即可改由外部驅動 `update()` —— 這是本類別唯一
+     * 接觸引擎的地方（連同 `stopTicking()` 共三個呼叫）。
+     */
+    protected startTicking(): void {
         if (this._ticking) {
             return;
         }
@@ -197,7 +262,7 @@ export class BaseSlotMachine {
         egret.startTick(this._tickHandler, this);
     }
 
-    private stopTicking(): void {
+    protected stopTicking(): void {
         if (!this._ticking) {
             return;
         }
@@ -362,6 +427,7 @@ export class BaseSlotMachine {
     /** 提交本輪 Server 結果並等待全部有效 Reel 停止。 */
     public async stopSpin(resultByReel: SymbolData[][]): Promise<void> {
         this.assertCanStop();
+        this.validateResultByReel(resultByReel);
         this._stopping = true;
         this._currentResultByReel = resultByReel.map(
             (result) => [...result],
@@ -836,6 +902,35 @@ export class BaseSlotMachine {
         );
     }
 
+    /**
+     * 驗證逐軸結果的形狀。
+     *
+     * **索引是 reelIndex，不是「第幾個參加的軸」** —— 鎖軸時中間會有
+     * 空洞，陣列長度仍必須涵蓋最大的作用軸索引。
+     *
+     * 每一軸的格數由 BaseReel.commitResult() 自己驗（可視格數是各軸
+     * 的屬性，允許不同），這裡只擋「機台層拿不到那一軸的結果」——
+     * 否則會把 undefined 丟進去，錯誤訊息完全指不出是哪一軸。
+     */
+    private validateResultByReel(resultByReel: SymbolData[][]): void {
+        if (!Array.isArray(resultByReel)) {
+            throw new Error(
+                "stopSpin() requires an array of results indexed by reel.",
+            );
+        }
+
+        for (const reelIndex of this._activeReelIndexes) {
+            if (!Array.isArray(resultByReel[reelIndex])) {
+                throw new Error(
+                    "stopSpin() is missing the result for reel "
+                    + `${reelIndex}; received ${resultByReel.length} `
+                    + "entries. The array is indexed by reelIndex, so "
+                    + "locked Reels still occupy their slot.",
+                );
+            }
+        }
+    }
+
     private assertCanStop(): void {
         this.assertInitialized();
 
@@ -962,6 +1057,49 @@ export class BaseSlotMachine {
             }
 
             usedReelIndexes[timing.reelIndex] = true;
+        }
+
+        if (config.fastMode) {
+            this.assertUniformMoveInterval(config);
+        }
+    }
+
+    /**
+     * fastMode 的各軸必須共用同一個 moveIntervalSeconds。
+     *
+     * Turbo 同步停輪是把各軸的剩餘**半格數**補齊到最大值
+     * （prepareFastQuickStopPadding()），補的是格數不是時間 —— 所以
+     * 一格要走多久必須一致，否則補完仍然不會同時停。
+     *
+     * 實測（3 軸、fastMode、quickStop）：
+     *   maxCellSpan 1/2/3 不同            → 停輪離散 0.0000s
+     *   可視格數 3/4/5 不同（3-4-5 機台） → 停輪離散 0.0000s
+     *   兩者都不同                        → 停輪離散 0.0000s
+     *   moveInterval 0.06/0.08/0.10 不同  → 停輪離散 0.2333s
+     *
+     * 也就是說**幾何差異會被半格補牌吸收**，只有時間差不會。因此這裡
+     * 不檢查 maxCellSpan 或 visibleCellCount —— 3-4-5-4-3 這種各軸可視
+     * 格數不同的機台是合法設定，擋掉才是錯的。
+     *
+     * prepareFastQuickStopPadding() 內原本就有一個 console.warn，但它
+     * 只在半格差時觸發；上面那組失步差的是整格，警告不會叫。
+     */
+    private assertUniformMoveInterval(
+        config: SlotMachineSpinConfig,
+    ): void {
+        const first = config.reelTimings[0].moveIntervalSeconds;
+
+        for (const timing of config.reelTimings) {
+            if (timing.moveIntervalSeconds !== first) {
+                throw new Error(
+                    "fastMode requires every Reel to share the same "
+                    + `moveIntervalSeconds; reel ${timing.reelIndex} uses `
+                    + `${timing.moveIntervalSeconds} but reel `
+                    + `${config.reelTimings[0].reelIndex} uses ${first}. `
+                    + "Turbo synchronisation pads half-cell counts, so a "
+                    + "differing cell duration cannot be compensated.",
+                );
+            }
         }
     }
 

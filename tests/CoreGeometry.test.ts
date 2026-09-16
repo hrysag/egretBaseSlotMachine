@@ -17,6 +17,9 @@ import { SymbolData } from "../src/SlotMachine/Core/Reel/Data/SymbolData";
 import { BaseReelIcon } from "../src/SlotMachine/Core/Reel/BaseReelIcon";
 import { BaseReel } from "../src/SlotMachine/Core/Reel/BaseReel";
 import { ReelIconDirection } from "../src/SlotMachine/Core/Reel/Config/ReelIconDirection";
+import { BaseSlotMachine } from "../src/SlotMachine/Core/BaseSlotMachine";
+import { ReelState } from "../src/SlotMachine/Core/Reel/Runtime/ReelState";
+import { SlotMachineReelTiming } from "../src/SlotMachine/Core/SlotMachine/Config/SlotMachineSpinConfig";
 import {
     ReelIconCell,
     ReelIconLayout,
@@ -24,6 +27,7 @@ import {
 
 /** 專案沒有裝 @types/node，只宣告本檔用得到的那一個。 */
 declare const process: { exit(code: number): void };
+declare function setTimeout(handler: () => void, timeout?: number): number;
 
 // ───────────────────────── 極簡斷言 ─────────────────────────
 
@@ -1507,13 +1511,740 @@ group("10c. 結果的閱讀順序（端對端）");
         [true, false, true],
     );
 }
+// ────────── 11. 多軸協調（機台層） ──────────
+
+/*
+ * 這是斷言第一次碰到 BaseSlotMachine。
+ *
+ * 能測的前提是決議 37：推進抽成 update(deltaTime)，內建心跳只是預設的
+ * 那層殼。測試子類別把 startTicking() 覆寫成不做事，整條路就完全不碰
+ * 引擎 —— egret 在 BaseSlotMachine 只出現三次，全在 startTicking() /
+ * stopTicking() 裡面。
+ *
+ * 時間因此是決定性的：不依賴牆上時鐘，不會因為機器快慢或分頁節流而 flaky。
+ */
+
+/** 只覆寫必要 Hook 的最小機台；不建 Icon，本節不需要顯示層。 */
+class HeadlessSlotMachine extends BaseSlotMachine {
+    public readonly startLog: { reelIndex: number; at: number }[] = [];
+    public readonly stopLog:
+        { reelIndex: number; at: number; elapsed: number }[] = [];
+    public clock = 0;
+
+    public constructor(
+        private readonly _timings: SlotMachineReelTiming[],
+        private readonly _fastMode = false,
+        private readonly _geometry?: {
+            maxCellSpan: number;
+            visible: number;
+        }[],
+    ) {
+        super();
+        this.onReelStarted = (reelIndex) => {
+            this.startLog.push({ reelIndex, at: this.clock });
+        };
+        this.onReelStopped = (reelIndex) => {
+            this.stopLog.push({
+                reelIndex,
+                at: this.clock,
+                elapsed: this.reelList[reelIndex].elapsedRollTime,
+            });
+        };
+    }
+
+    /** 由測試驅動 update()，不註冊引擎心跳。 */
+    protected startTicking(): void {
+        // 測試自己推進。
+    }
+
+    protected registerInitialReelData(): void {
+        this.reelList.forEach((reel, index) => {
+            const geometry = this._geometry !== undefined
+                ? this._geometry[index]
+                : undefined;
+
+            reel.registerSymbolCells([
+                { symbolId: 1, cellSpan: 1 },
+                { symbolId: 2, cellSpan: 1 },
+                { symbolId: 3, cellSpan: 1 },
+                { symbolId: 4, cellSpan: 1 },
+                { symbolId: 6, cellSpan: 2 },
+                { symbolId: 7, cellSpan: 3 },
+            ]);
+            reel.init({
+                visibleCellCount:
+                    geometry !== undefined ? geometry.visible : 3,
+                cellSize: CELL_SIZE,
+                maxCellSpan:
+                    geometry !== undefined
+                        ? geometry.maxCellSpan
+                        : undefined,
+                moveInterval: this._timings[index].moveIntervalSeconds,
+            });
+            reel.setPerformanceDataBank(boardOf([1, 2, 3, 4]));
+        });
+    }
+
+    protected registerInitialSpinConfigs(): void {
+        this.registerSpinConfig("normal", {
+            fastMode: this._fastMode,
+            reelTimings: this._timings,
+        });
+    }
+
+    protected applyInitialLayout(): void {
+        this.reelList.forEach((reel, index) => {
+            const geometry = this._geometry !== undefined
+                ? this._geometry[index]
+                : undefined;
+
+            if (geometry === undefined) {
+                reel.setInitialLayout({
+                    entryBuffer: [symbol(7)],
+                    visible: [symbol(1), symbol(2), symbol(3)],
+                    exitBuffer: [symbol(6), symbol(4)],
+                });
+                return;
+            }
+
+            reel.setInitialLayout({
+                entryBuffer: fill(1, geometry.maxCellSpan),
+                visible: fill(2, geometry.visible),
+                exitBuffer: fill(3, geometry.maxCellSpan),
+            });
+        });
+    }
+}
+
+/** 產生 n 格同一個 1×1 Symbol。 */
+function fill(id: number, count: number): SymbolData[] {
+    const result: SymbolData[] = [];
+
+    for (let index = 0; index < count; index++) {
+        result.push(symbol(id));
+    }
+
+    return result;
+}
+
+function boardOf(ids: number[]): SymbolData[] {
+    return ids.map(symbol);
+}
+
+function timing(
+    reelIndex: number,
+    startDelaySeconds: number,
+    targetStopSeconds: number,
+): SlotMachineReelTiming {
+    return {
+        reelIndex,
+        startDelaySeconds,
+        targetStopSeconds,
+        moveIntervalSeconds: 0.08,
+    };
+}
+
+function createMachine(
+    reelCount: number,
+    timings: SlotMachineReelTiming[],
+    fastMode = false,
+    geometry?: { maxCellSpan: number; visible: number }[],
+): HeadlessSlotMachine {
+    const machine = new HeadlessSlotMachine(timings, fastMode, geometry);
+    const reels: BaseReel[] = [];
+
+    for (let index = 0; index < reelCount; index++) {
+        reels.push(new BaseReel());
+    }
+
+    machine.init(reels);
+    return machine;
+}
+
+/** 讓 promise 鏈往前走一格。 */
+function flush(): Promise<void> {
+    return new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
+/** 以固定步長推進虛擬時間，模擬真實幀切碎。 */
+async function advance(
+    machine: HeadlessSlotMachine,
+    seconds: number,
+    step = 1 / 60,
+): Promise<void> {
+    let remaining = seconds;
+
+    while (remaining > 1e-9) {
+        const slice = Math.min(step, remaining);
+
+        /*
+         * 先加時鐘再推進：update() 內部是 _spinElapsed += deltaTime 之後
+         * 才 startDueReels()，所以 callback 觸發當下 clock 要已經含這一格，
+         * 否則記到的啟動時刻會少一格。
+         */
+        machine.clock += slice;
+        machine.update(slice);
+        remaining -= slice;
+        await flush();
+    }
+}
+
+/** 推進到條件成立或超時；回傳是否成立。 */
+async function advanceUntil(
+    machine: HeadlessSlotMachine,
+    done: () => boolean,
+    limitSeconds = 12,
+    step = 1 / 60,
+): Promise<boolean> {
+    let spent = 0;
+
+    while (spent < limitSeconds) {
+        if (done()) {
+            return true;
+        }
+
+        machine.clock += step;
+        machine.update(step);
+        spent += step;
+        await flush();
+    }
+
+    return done();
+}
+
+/** 四捨五入到 2 位，避免浮點雜訊進斷言。 */
+function round2(value: number): number {
+    return Math.round(value * 100) / 100;
+}
+
+/**
+ * 時刻比對容一格 tick。
+ *
+ * `_spinElapsed` 是逐格累加出來的，6 格 1/60 加起來是 0.0999…而不是
+ * 0.1，所以 `startAt <= _spinElapsed` 會在下一格才成立 —— 軸晚一格啟動。
+ * 這是累積 deltaTime 的固有行為，實機也一樣，不是缺陷。
+ */
+function nearly(actual: number[], expected: number[]): boolean[] {
+    const tolerance = 1 / 60 + 1e-6;
+    return expected.map(
+        (value, index) => Math.abs(actual[index] - value) <= tolerance,
+    );
+}
+
+async function runMultiReelSection(): Promise<void> {
+    group("11. 多軸：錯開啟動");
+
+    {
+        const machine = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+
+        check(
+            "init() 之後還沒有任何軸啟動",
+            machine.startLog.length,
+            0,
+        );
+
+        machine.startSpin("normal");
+
+        check(
+            "startSpin() 內就啟動 startAt 為 0 的那一軸",
+            machine.startLog.map((entry) => entry.reelIndex),
+            [0],
+        );
+
+        await advance(machine, 0.05);
+        check("0.05s 還沒到第二軸的 0.1s", machine.startLog.length, 1);
+
+        await advance(machine, 0.07);
+        check(
+            "越過 0.1s 之後第二軸啟動",
+            machine.startLog.map((entry) => entry.reelIndex),
+            [0, 1],
+        );
+
+        await advance(machine, 0.1);
+        check(
+            "再越過 0.2s 之後第三軸啟動（delay 是累積的）",
+            machine.startLog.map((entry) => entry.reelIndex),
+            [0, 1, 2],
+        );
+
+        check(
+            "各軸啟動時刻遞增且間隔約 0.1s",
+            nearly(machine.startLog.map((entry) => entry.at), [0, 0.1, 0.2]),
+            [true, true, true],
+        );
+    }
+
+    group("11b. fastMode：同一個迴圈內全部啟動");
+
+    {
+        const machine = createMachine(
+            3,
+            [timing(0, 0, 0.5), timing(1, 0.1, 0.5), timing(2, 0.1, 0.5)],
+            true,
+        );
+
+        machine.startSpin("normal");
+
+        check(
+            "fastMode 把 startAt 全部壓成 0，三軸同時啟動",
+            machine.startLog.map((entry) => entry.reelIndex),
+            [0, 1, 2],
+        );
+        check(
+            "啟動時刻全為 0",
+            machine.startLog.map((entry) => round2(entry.at)),
+            [0, 0, 0],
+        );
+    }
+
+    group("11c. 鎖軸：只轉指定的軸");
+
+    {
+        const machine = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+
+        machine.startSpin("normal", [1, 2]);
+        await advance(machine, 0.3);
+
+        check(
+            "只有被選中的軸啟動",
+            machine.startLog.map((entry) => entry.reelIndex),
+            [1, 2],
+        );
+        check(
+            "本輪第一個啟動的軸不延遲，delay 從第二個才算",
+            nearly(machine.startLog.map((entry) => entry.at), [0, 0.1]),
+            [true, true],
+        );
+        check(
+            "沒被選中的軸維持 Idle",
+            machine.reelList[0].state,
+            ReelState.Idle,
+        );
+    }
+
+    group("11d. 停輪：依序停、間隔等於錯開啟動的間隔");
+
+    /*
+     * targetStopSeconds 必須大於「物理上最早可停」，否則各軸會被鉗到
+     * 自己的 earliest，而 earliest 取決於 commitResult 當下該軸的相位 ——
+     * 順序就不再保證（見 §11e）。1.2s 對 0.08s 的 moveInterval 綽綽有餘。
+     */
+    {
+        const machine = createMachine(3, [
+            timing(0, 0, 1.2),
+            timing(1, 0.1, 1.2),
+            timing(2, 0.1, 1.2),
+        ]);
+
+        machine.startSpin("normal");
+        await advance(machine, 0.25);
+
+        const board = boardOf([1, 2, 3]);
+        machine.stopSpin([board, board, board]);
+
+        const settled = await advanceUntil(
+            machine,
+            () => machine.stopLog.length === 3,
+        );
+
+        check("三軸都停下來了", settled, true);
+        check(
+            "停輪順序依 reelIndex",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [0, 1, 2],
+        );
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        const gaps = [at[1] - at[0], at[2] - at[1]];
+        check(
+            "停輪間隔維持錯開啟動的 0.1s（容一格 tick 誤差）",
+            gaps.map((gap) => gap > 0.08 && gap < 0.12),
+            [true, true],
+        );
+        check(
+            "三軸的可視盤面都等於送進去的結果",
+            machine.getAllVisibleSymbolIds(),
+            [[1, 2, 3], [1, 2, 3], [1, 2, 3]],
+        );
+
+        /*
+         * 實際停輪時間要等於計畫。修正 calculateResultEntryHalfCellCount()
+         * 的柵欄錯誤之前這條不成立 —— 實際會比計畫早整整一個 moveInterval
+         * （252 組參數實測，差距固定）。容差是本測試以 1/60 取樣的粒度。
+         */
+        check(
+            "實際停輪時間等於 plan.actualStopTime",
+            machine.stopLog.map((entry, index) => {
+                const plan = machine.reelList[index].lastStopPlan;
+                return Math.abs(entry.elapsed - plan.actualStopTime)
+                    <= 1 / 60 + 1e-6;
+            }),
+            [true, true, true],
+        );
+        check(
+            "實際停輪不晚於要求的時間，且在一個 moveInterval 之內",
+            machine.stopLog.map((entry) => {
+                const late = entry.elapsed - 1.2;
+                return late <= 1e-6 && late > -0.08;
+            }),
+            [true, true, true],
+        );
+    }
+
+    group("11e. 要求的停輪時間早於物理下限時會被鉗到 earliest");
+
+    /*
+     * earliest 是「結果實體上還要再走幾格才進得了可視區」，那是下限 ——
+     * 補再多表演牌只會更晚停，不可能更早。要求比它還早時只能鉗制。
+     *
+     * 各軸的 earliest 不同：錯開啟動讓它們在 commitResult 當下已跑的
+     * 時間不同，相位也不同。被鉗制之後 createCurrentStopTimings() 對
+     * requested 做的遞增保證就不再適用，停輪順序可能亂掉 —— 這不是
+     * 缺陷，是要求本身不可能達成。正式設定應讓 targetStopSeconds
+     * 大於 earliest，此時順序與間隔都正確（見 §11d）。
+     *
+     * 本節只鎖住「確實發生了鉗制」，不斷言順序。
+     */
+    {
+        const machine = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+
+        machine.startSpin("normal");
+        await advance(machine, 0.25);
+
+        const board = boardOf([1, 2, 3]);
+        machine.stopSpin([board, board, board]);
+        await advanceUntil(machine, () => machine.stopLog.length === 3);
+
+        const plans = machine.reelList.map((reel) => reel.lastStopPlan);
+        check(
+            "三軸的 requested 都是各自起點起算的 0.5",
+            plans.map((plan) => round2(plan.requestedStopTime)),
+            [0.5, 0.5, 0.5],
+        );
+        check(
+            "但三軸的 earliest 各不相同（相位不同）",
+            plans[0].earliestStopTime !== plans[1].earliestStopTime
+            && plans[1].earliestStopTime !== plans[2].earliestStopTime,
+            true,
+        );
+        check(
+            "實際停輪時間等於 earliest，也就是被鉗制了",
+            plans.map(
+                (plan) => plan.actualStopTime === plan.earliestStopTime,
+            ),
+            [true, true, true],
+        );
+        check(
+            "盤面仍然正確（鉗制影響的是時間不是結果）",
+            machine.getAllVisibleSymbolIds(),
+            [[1, 2, 3], [1, 2, 3], [1, 2, 3]],
+        );
+    }
+
+    group("11f. 守門：fastMode 的 moveInterval 必須一致");
+
+    /*
+     * Turbo 同步是把各軸剩餘的**半格數**補齊到最大值，補的是格數不是
+     * 時間，所以一格要走多久必須一致。實測（見 §11g）幾何差異會被補牌
+     * 吸收，只有時間差不會 —— 因此只擋 moveInterval，不擋幾何。
+     */
+    {
+        checkThrows("fastMode 各軸 moveInterval 不同要丟例外", () => {
+            createMachine(
+                2,
+                [
+                    {
+                        reelIndex: 0,
+                        startDelaySeconds: 0,
+                        targetStopSeconds: 1.2,
+                        moveIntervalSeconds: 0.08,
+                    },
+                    {
+                        reelIndex: 1,
+                        startDelaySeconds: 0,
+                        targetStopSeconds: 1.2,
+                        moveIntervalSeconds: 0.06,
+                    },
+                ],
+                true,
+            );
+        });
+
+        let normalModeOk = true;
+        try {
+            createMachine(2, [
+                {
+                    reelIndex: 0,
+                    startDelaySeconds: 0,
+                    targetStopSeconds: 1.2,
+                    moveIntervalSeconds: 0.08,
+                },
+                {
+                    reelIndex: 1,
+                    startDelaySeconds: 0.1,
+                    targetStopSeconds: 1.2,
+                    moveIntervalSeconds: 0.06,
+                },
+            ]);
+        } catch (error) {
+            normalModeOk = false;
+        }
+
+        check(
+            "非 fastMode 允許各軸 moveInterval 不同（不是 Turbo 就沒這個前提）",
+            normalModeOk,
+            true,
+        );
+    }
+
+    group("11g. 守門：幾何不同不擋 —— 3-4-5 機台是合法設定");
+
+    {
+        const timings = [
+            timing(0, 0, 1.2),
+            timing(1, 0, 1.2),
+            timing(2, 0, 1.2),
+        ];
+        const geometry = [
+            { maxCellSpan: 1, visible: 3 },
+            { maxCellSpan: 3, visible: 4 },
+            { maxCellSpan: 2, visible: 5 },
+        ];
+
+        let built: HeadlessSlotMachine | undefined;
+        let buildOk = true;
+        try {
+            built = createMachine(3, timings, true, geometry);
+        } catch (error) {
+            buildOk = false;
+        }
+
+        check("各軸 maxCellSpan 與可視格數不同時仍建得起來", buildOk, true);
+
+        if (built !== undefined) {
+            const machine = built;
+            check(
+                "各軸 strip 長度確實不同",
+                machine.reelList.map((reel) => reel.stripCellCount),
+                [1 + 3 + 1, 3 + 4 + 3, 2 + 5 + 2],
+            );
+
+            machine.startSpin("normal");
+            await advance(machine, 0.4);
+            machine.quickStop();
+            machine.stopSpin([
+                fill(4, 3),
+                fill(4, 4),
+                fill(4, 5),
+            ]);
+            await advanceUntil(
+                machine,
+                () => machine.stopLog.length === 3,
+            );
+
+            const at = machine.stopLog.map((entry) => entry.at);
+            const spread = Math.max(...at) - Math.min(...at);
+            check(
+                "Turbo 仍然同步停輪（幾何差異被半格補牌吸收）",
+                spread <= 1 / 60 + 1e-6,
+                true,
+            );
+            check(
+                "各軸盤面都對，長度等於自己的可視格數",
+                machine.getAllVisibleSymbolIds().map((ids) => ids.length),
+                [3, 4, 5],
+            );
+        }
+    }
+
+    group("11h. 守門：stopSpin 的結果陣列以 reelIndex 為索引");
+
+    {
+        const machine = createMachine(3, [
+            timing(0, 0, 1.2),
+            timing(1, 0.1, 1.2),
+            timing(2, 0.1, 1.2),
+        ]);
+
+        machine.startSpin("normal");
+        await advance(machine, 0.3);
+
+        const board = boardOf([1, 2, 3]);
+
+        /*
+         * stopSpin() 是 async，所以守門是以 rejection 形式出現而不是
+         * 同步 throw —— 與 assertCanStop() 等既有守門一致。
+         */
+        let rejected = false;
+        try {
+            await machine.stopSpin([board, board]);
+        } catch (error) {
+            rejected = true;
+        }
+
+        check(
+            "結果陣列少一軸要拒絕，而不是把 undefined 丟給該軸",
+            rejected,
+            true,
+        );
+        check(
+            "被拒絕之後機台沒有進入 stopping，可以重試",
+            machine.spinning,
+            true,
+        );
+    }
+
+    group("11i. Turbo 同步：各軸退場端墊格數不同時仍要同時停");
+
+    /*
+     * 退場端截斷會在結果前面墊格（createExitTruncationCells），墊幾格
+     * 取決於盤面 —— 各軸不同。而 Turbo 補牌在 stopSpin() 內、
+     * commitResult() 之後立刻決定，那時結果還沒寫進佇列，所以
+     * calculateQuickStopHalfCellCount() 原本看不到這幾格，補牌會算成 0。
+     *
+     * 實測（修正前）：墊 0/1/2 格的三軸停在 0.8833 / 0.9667 / 1.05，
+     * 差距精確等於墊格數。修正是把 pendingExitTruncationCellCount
+     * 加進行程，走的是與 tryCommitResultAtHandoff() 同一個計算。
+     */
+    {
+        const machine = createMachine(
+            3,
+            [timing(0, 0, 2.0), timing(1, 0, 2.0), timing(2, 0, 2.0)],
+            true,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.4);
+        machine.quickStop();
+
+        // 墊 0 格 / 墊 1 格 / 墊 2 格
+        machine.stopSpin([
+            boardOf([1, 2, 3]),
+            boardOf([1, 7, 7]),
+            boardOf([1, 2, 7]),
+        ]);
+        const settled = await advanceUntil(
+            machine,
+            () => machine.stopLog.length === 3,
+        );
+
+        check("三軸都停下來了", settled, true);
+        check(
+            "三軸盤面都正確，含兩種退場端截斷",
+            machine.getAllVisibleSymbolIds(),
+            [[1, 2, 3], [1, 7, 7], [1, 2, 7]],
+        );
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        check(
+            "停輪離散為 0（修正前是 0 / 1 / 2 格）",
+            Math.max(...at) - Math.min(...at) <= 1 / 60 + 1e-6,
+            true,
+        );
+
+        const perf = machine.reelList.map(
+            (reel) => reel.lastStopPlan.performanceCellCount,
+        );
+        check(
+            "補牌數各軸不同 —— 證明差異是被補平的，不是剛好一樣",
+            perf[0] !== perf[2],
+            true,
+        );
+    }
+
+    group("11j. Turbo 同步：結果先到、玩家後按急停");
+
+    /*
+     * 急停有兩個進入順序，兩邊失步的成因不同：
+     *
+     *   玩家先按、結果後到 → prepareFastQuickStopPadding() 由 stopSpin()
+     *     觸發，此時結果還沒寫進佇列 → 靠
+     *     ReelStopFlow.pendingExitTruncationCellCount 補上墊格（§11i）
+     *
+     *   結果先到、玩家後按 → 由 quickStop() 觸發，此時結果已在佇列裡，
+     *     而墊格被併在結果區段開頭，_resultStartIndex 指向墊格不是本體
+     *     → 靠 ReelDataFlow.pendingCellCountBeforeResultBody() 算到本體
+     *
+     * 兩者互斥（clearResultEntry() 在資料提交的同一個函式尾端執行），
+     * 所以不會重複計算。1080 組實測，兩條路的殘差都只剩次格量化。
+     */
+    {
+        const machine = createMachine(
+            3,
+            [timing(0, 0, 2.0), timing(1, 0, 2.0), timing(2, 0, 2.0)],
+            true,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.4);
+
+        // 墊 0 格 / 墊 1 格 / 墊 2 格
+        machine.stopSpin([
+            boardOf([1, 2, 3]),
+            boardOf([1, 7, 7]),
+            boardOf([1, 2, 7]),
+        ]);
+
+        const committed = await advanceUntil(
+            machine,
+            () => machine.reelList.every(
+                (reel) => reel.lastStopPlan !== undefined,
+            ),
+        );
+        check("結果已經寫進各軸的佇列", committed, true);
+
+        machine.quickStop();
+        const settled = await advanceUntil(
+            machine,
+            () => machine.stopLog.length === 3,
+        );
+
+        check("三軸都停下來了", settled, true);
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        check(
+            "停輪離散為 0（修正前是 0 / 1 / 2 格）",
+            Math.max(...at) - Math.min(...at) <= 1 / 60 + 1e-6,
+            true,
+        );
+
+        /*
+         * 這條同時守著另一件事：`skipPendingPerformanceData()` 只能砍到
+         * `_resultStartIndex`，**墊格不可以被砍**。砍掉的話退場端截斷的
+         * 那幾格就不見了，盤面會壞 —— 所以盤面正確本身就是那道防線。
+         * 之後若有人把兩個 pending 計數合併掉，這裡會紅。
+         */
+        check(
+            "急停砍掉表演牌之後，含兩種截斷的盤面仍然正確",
+            machine.getAllVisibleSymbolIds(),
+            [[1, 2, 3], [1, 7, 7], [1, 2, 7]],
+        );
+    }
+}
 
 // ───────────────────────── 統計 ─────────────────────────
 
-console.log("\n" + "═".repeat(52));
-console.log(`  通過 ${passCount}　失敗 ${failCount}`);
-console.log("═".repeat(52));
+runMultiReelSection().then(() => {
+    console.log("\n" + "═".repeat(52));
+    console.log(`  通過 ${passCount}　失敗 ${failCount}`);
+    console.log("═".repeat(52));
 
-if (failCount > 0) {
-    process.exit(1);
-}
+    if (failCount > 0) {
+        process.exit(1);
+    }
+});

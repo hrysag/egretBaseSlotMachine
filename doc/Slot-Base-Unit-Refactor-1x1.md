@@ -19,7 +19,7 @@
 | 2 | group 的 **head 在進場側**，圖從 head 往**退場方向**延伸 `cellSpan` 格 |
 | 3 | 由 server per-cell 結果推導 group 時，**從退場端往進場端掃**，貪婪開組 |
 | 4 | ~~被顯示區截斷的 group **只會截在進場端**~~ → **改為：兩端都可能被截斷**，各有一套補格（見 §2.3.1） |
-| 5 | 進場／退場 buffer **對稱，各 = maxSpan** |
+| 5 | 進場／退場 buffer **對稱，各 = maxSpan**（**各軸之間不必一致**，見 §2.4 的更正） |
 | 6 | `ReelSymbolRuntime.cellSpan` **換成** `groupOffset`（換，不是加） |
 | 7 | 不在 runtime 上存 group 總長，需要時查 Registry |
 | 8 | 表演資料入口維持 **Symbol 為單位**，框架在入列時展開成 N 格 |
@@ -40,8 +40,13 @@
 | 32 | **`cellSpan` 不得大於 `visibleCellCount`**。超過的話「盤面被單一 Symbol 填滿」時缺口落在哪一端無法從盤面判斷（見 §2.3.1 末段） |
 | 34 | Icon 的輸入**拆成「我在哪」與「我是什麼」兩個介面**（`ReelIconLayout` / `ReelIconCell`），後者只在值真的改變時才推；`cellSpan` 與 `displayPriority` 由框架現查 Registry 後投影過去（見 §3.9） |
 | 35 | 方向的對外出口**只給推導結果**（`exitTowardPositiveAxis` / `layoutType`），`inverseDirection` 不暴露 —— 避免遊戲層複製框架的座標慣例（見 §2.5） |
+| 36 | **機台是顯示物件**（`extends eui.Component`），`init()` 把 Reel 收成子項，**mask 蓋在機台**而非逐軸（見 §3.8） |
+| 37 | 推進抽成 **`update(deltaTime)`**，心跳只是預設的那層殼；鉗上限留在殼、不放進 `update()`。心跳維持 `startTick`（見 §3.8） |
+| 38 | **Icon 收在 `BaseReel` 內的普通容器**，避開 eui 在子項增刪時的強制重測量（見 §3.9） |
+| 39 | 跨軸表演**搬的是表演物件不是 Icon**，Icon 位置維持框架獨佔，表演物件每幀單向跟隨 worldPos（見 §3.9）。未實作 |
+| 40 | Reel 之間的層級排序用**保留槽位**，不指派連續索引，以免推走機台底下的美術子項（見 §3.9）。未實作 |
 
-> 決議 21～29 在 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、決議 33 在 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。決議 30～32、34、35 因為屬於 group 模型與其顯示層對應，記在本文。
+> 決議 21～29 在 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、決議 33 在 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。決議 30～32、34～40 因為屬於 group 模型與其顯示層對應，記在本文。
 
 **不變的東西**：`cellSpan` 仍然由企劃在 `registerSymbolCells()` 填寫，格式一字不改；server 結果格式（per-cell、長度 === `visibleCellCount`）不變；`moveInterval`＝一個 Cell 的時間不變；半格 Movement 拆分不變；`targetStopTime` 的對外語意不變；座標原點與 `axisPosition` 的語意不變；**Movement 維持集中在 Reel 推進單一數值軸，Icon 不繼承 Movement**。
 
@@ -403,7 +408,23 @@ strip = maxSpan + visibleCellCount + maxSpan
 
 範例：`maxSpan = 4`、`visibleCellCount = 3` → 11 個 runtime／Icon。
 
-多軸請務必讓所有軸的 strip 長度一致（`maxSpan` 統一），Turbo 同步停輪才不會因幾何不同而出現相位差。
+~~多軸請務必讓所有軸的 strip 長度一致（`maxSpan` 統一），Turbo 同步停輪才不會因幾何不同而出現相位差。~~
+
+> **這條理由是錯的，已實測反證。** Turbo 同步是把各軸剩餘的**半格數**補齊到最大值（`prepareFastQuickStopPadding()`），補的是**格數**不是時間 —— 幾何差異會被補牌完全吸收。
+>
+> 三軸 fastMode + quickStop 實測停輪離散：
+>
+> | 情境 | 離散 |
+> |---|---|
+> | 全部相同 | 0.0000s |
+> | `maxCellSpan` 1/2/3 不同 | **0.0000s** |
+> | 可視格數 3/4/5 不同（3-4-5 機台） | **0.0000s** |
+> | 兩者都不同 | **0.0000s** |
+> | `moveInterval` 0.06/0.08/0.10 不同 | **0.2333s** |
+>
+> 真正的前提是 **`moveInterval` 一致**，已加守門（`BaseSlotMachine.assertUniformMoveInterval()`，只在 `fastMode` 檢查）。**各軸的 `maxCellSpan` 與可視格數可以不同** —— 3-4-5-4-3 這種機台是合法設定，擋掉才是錯的。斷言見 `tests/CoreGeometry.test.ts` §11f／§11g。
+>
+> **但上面那張表有盲點，補記於此**：它全部用 1×1 盤面，所以沒有任何補格。改用會產生退場端截斷的盤面之後，Turbo 是**失步的** —— 那是另一個 bug，見 §3.6 的「Turbo 補牌看不到退場端墊格」。修掉之後幾何差異與截斷差異都能同步。
 
 ### 2.5 方向
 
@@ -819,10 +840,126 @@ for (const runtime of entryRuntimes) {
 
 不再呼叫投影模擬，改成純算術：剩餘 cell 數 × 2（half-cell）＋ 目前 Movement 的剩餘相位。
 
+#### 已修：Turbo 補牌看不到退場端墊格
+
+`BaseSlotMachine.prepareFastQuickStopPadding()` 把各軸剩餘的半格數補齊到最大值，但它問的 `calculateQuickStopHalfCellCount()` **看不到退場端截斷會在結果前面墊幾格**。
+
+根因是時序：補牌在 `stopSpin()` 內、`commitResult()` 之後立刻決定，而 `commitResult()` 只把結果記進 `ReelStopFlow`，**一格資料都沒動** —— 真正墊格要等到下一個 Cell 邊界的 `tryCommitResultAtHandoff()`（見 [Core-Runtime-Flow.md](Core-Runtime-Flow.md) §1.1）。所以決定補幾格的當下，Reel 還不知道自己等一下要墊幾格。
+
+**實測（修正前，三軸幾何相同、`moveInterval` 相同）**
+
+| 盤面 | 退場端墊格 | 停輪 |
+|---|---|---|
+| `[1,2,3]` | 0 | 0.8833 |
+| `[1,7,7]` | 1 | 0.9667 |
+| `[1,2,7]` | 2 | 1.0500 |
+
+三軸的 `halfCellCount` 都回報 12，補牌算成 `[0,0,0]`，**失步量精確等於墊格數**。
+
+**修法**：`ReelStopFlow.pendingExitTruncationCellCount` 回報尚未提交的結果會墊幾格，`calculateQuickStopHalfCellCount()` 把它加進行程。用的是與 `tryCommitResultAtHandoff()` **同一個** `countExitTruncationCells()`，不產生第二份推導。
+
+進場端截斷的補格**不算** —— 那幾格接在結果後面，盤面對齊之後才進場，實測 `[7,7,1]`／`[7,1,1]` 皆無延遲。
+
+**驗算（360 組：maxCellSpan 3/4 × 可視 3/4/5 × 各 10 種盤面 × moveInterval 3 種 × quickStop 時機 2 種，零失敗、盤面全對）**
+
+| 退場端墊格 | 修正前公式的誤差（格） | 組數 |
+|---|---|---|
+| 0 | −0.15 ～ 0.33 | 228 |
+| 1 | **0.85 ～ 1.33** | 96 |
+| 2 | **1.85 ～ 2.33** | 36 |
+
+加上該項之後，殘差收斂成六個離散值、每個恰好 60 組 —— 而變因剛好是 `moveInterval`（3）× quickStop 時機（2）。也就是**殘差只隨相位變動、與盤面無關**。fastMode 各軸同時啟動且 `moveInterval` 相同（由 `assertUniformMoveInterval()` 守門），殘差因此各軸一致，相減即歸零。
+
+> **1016 沒有這個問題，因為它沒有這個功能。** `UniReel1016.fastStopRoll()` 是把佇列砍到 `iconAmount + 1 + _endCardCount`，而 `_endCardCount` 是該軸連續牌需要的補牌數、**逐軸不同** —— 砍完各軸剩的量本來就不一樣，它從來沒有宣稱同時停。我們的框架有宣稱，所以這是 bug。
+
+斷言見 `tests/CoreGeometry.test.ts` §11i；把該項拿掉會紅兩條。
+
+#### 已修：急停的另一個進入順序（結果先到、玩家後按）
+
+上一節修的是「玩家先按、結果後到」。急停有**兩個進入順序**，`prepareFastQuickStopPadding()` 也因此有兩個呼叫點：
+
+| 順序 | 觸發點 | 當下狀態 | 失步成因 |
+|---|---|---|---|
+| 玩家先按、結果後到 | `stopSpin()` 內 | 結果**未寫進佇列** | 看不到「等一下會墊幾格」 |
+| **結果先到、玩家後按** | `quickStop()` 內 | 結果**已寫進佇列**，且 `applyQuickStopDataSkip()` 剛砍掉未讀表演牌 | 墊格**被併在結果區段開頭**，`_resultStartIndex` 指的是墊格不是本體 |
+
+第二條的關鍵在 `ReelDataFlow.commitResult()`：
+
+```ts
+const resultEntryCells = [
+    ...exitTruncationCells,      // ← 墊格
+    ...visibleResultEntryCells,
+];
+```
+
+墊格與結果本體被併成同一個 `resultSegment`，所以 `_resultStartIndex` 指向墊格。砍掉表演牌之後 `pendingCellCountBeforeResult()` 三軸都歸零，行程算出來一樣長 —— 但實際還要多走墊格那幾格。
+
+**實測（修正前，三軸幾何相同、盤面墊 0/1/2 格）**：`padding` 讀到的 half 是 `[11, 11, 11]`，補牌 `[0,0,0]`，停輪 `0.9667 / 1.05 / 1.1333`。
+
+**修法**：`ReelDataFlow` 在 commit 時記下 `_resultExitPadCellCount`，新增 `pendingCellCountBeforeResultBody()` 算到**結果本體**；`calculateQuickStopHalfCellCount()` 改用它。
+
+> **`skipPendingPerformanceData()` 的砍除範圍不動** —— 它只能砍到 `_resultStartIndex`，**墊格砍掉盤面就壞了**。兩個計數刻意分開，不要合併。§11j 最後一條斷言（盤面正確）就是這道防線。
+
+兩個來源**互斥**，不會重複計算：`pendingCellCountBeforeResultBody()` 在結果未提交時早退回 0；`pendingExitTruncationCellCount` 則在 `clearResultEntry()` 之後回 0，而那正是資料提交同一個函式的尾端。
+
+**驗算（1080 組：兩種順序 × maxCellSpan 3/4 × 可視 3/4/5 × 各 10 種盤面 × moveInterval 3 種 × 開始時機 2 種 × 提交後再走 0/2 格，零失敗、盤面全對）**
+
+| 順序 | 墊格 | 組數 | 修正前誤差（格） | 修正後 |
+|---|---|---|---|---|
+| post | 0 | 456 | 0.03 ~ 0.63 | 0.03 ~ 0.63 |
+| post | 1 | 192 | **1.00 ~ 1.63** | **0.00 ~ 0.63** |
+| post | 2 | 72 | **2.00 ~ 2.63** | **0.00 ~ 0.63** |
+| pre | 0 | 228 | −0.31 ~ 0.31 | −0.31 ~ 0.31 |
+| pre | 1 | 96 | −0.31 ~ 0.31 | −0.31 ~ 0.31 |
+| pre | 2 | 36 | −0.31 ~ 0.28 | −0.31 ~ 0.28 |
+
+`pre` 三列與前一節修完之後**逐格相同** —— 這次的改動沒有動到它。
+
+> `post` 的殘差整段偏正約半格（`pad = 0` 那 456 組也一樣），與墊格數無關，是 `applyQuickStopDataSkip()` 砍完之後的相位落點。同一輪裡所有軸走同一條路徑，偏移量共同，相減歸零，因此不影響同步。
+
+斷言見 §11j；把 `pendingCellCountBeforeResultBody()` 換回 `pendingCellCountBeforeResult()` 會紅一條。
+
 ### 3.7 `Reel/Internal/ReelStopFlow.ts`
 
 - `tryCommitResultAtHandoff()` 的 `requiredRemainingParity` 奇偶修正（`:154-163`）可刪 —— 每格等寬，相位恆定。
 - 已經是死碼的 `getResultTravelCellCount()`（`:339`）與 `getExitMissingCellCount()`（`:358`）一併刪除。
+
+#### 已修：停輪時間的柵欄錯誤（早一格）
+
+`BaseReel.calculateResultEntryHalfCellCount()` 回傳的值被 `ReelStopFlow` 當**時間**用，但它算的是**交接次數**，兩者差一：
+
+```ts
+// 修正前
+const travelCells = firstVisibleIndex + visibleCellCount;   // 6 = 交接次數
+return travelCells * 2;
+```
+
+結果的第一格要從 idx0 走到可視段最外格，確實需要 `firstVisibleIndex + visibleCellCount` 次交接。但**其中第一次與 commit 同刻發生** —— `_secondHalfCompleteHandler` 是 `tryCommitResultAtBoundary()` 緊接 `drainPendingHandoffs()`（見 [Core-Runtime-Flow.md](Core-Runtime-Flow.md) §2.3），所以 N 次交接只跨過 **N−1** 個 `moveInterval`。
+
+**影響**：`earliestStopTime` 晚報一格；`performanceCellBudget` 因為扣掉了灌水的值而少補一格表演牌，實際停輪因此比要求的時間**早約一格**。
+
+```ts
+// 修正後
+return (handoffCells - 1) * 2;
+```
+
+**實測（252 組參數組合，單軸直接驅動）**
+
+涵蓋 `maxCellSpan` ∈ {1,2,3} × 可視格數 ∈ {1,3,5} × `moveInterval` ∈ {0.05,0.08,0.12} × 目標時間 ∈ {1.0,1.6,2.5} × commit 時機 ∈ {0.2,0.6}，另加含 1×3 大牌與兩端截斷的盤面。
+
+| | 修正前 | 修正後 |
+|---|---|---|
+| `realized − plan.actualStopTime` | **−1.000 個 moveInterval**（143/218 組剛好，其餘落在 ±0.11 的取樣粒度內） | **0**（殘差 ±0.11 為取樣粒度） |
+| `realized − requested` | −1.04 ～ −1.88 格 | **−0.21 ～ −0.83 格**，永遠不晚 |
+| 因不可能而被鉗制的組合 | 34 | 24 |
+| 盤面錯誤 | 0 | 0 |
+
+差距與 `maxCellSpan`／可視格數／`moveInterval`／目標時間**都無關**，固定一格 —— 這是判定它是柵欄錯誤而非等比例誤差的依據。
+
+**剩下的誤差是必然的**：停輪只能發生在完整 Cell 邊界（決議 15），所以剩餘時間一定要量化成整數格。兩個 `floor` 保證**不晚於**要求的時間，最壞早一格。曾評估改成 `round`（誤差砍半成 ±0.5 格）但**否決** —— 那會讓某軸停在比目標晚的時刻，而 `BaseSlotMachine.createCurrentStopTimings()` 是靠「requested 遞增」保證停輪順序的；一旦可以向上取整，`staggerStart` 小於 `moveInterval` 時順序就可能反轉。
+
+斷言見 `tests/CoreGeometry.test.ts` §11d 的「實際停輪時間等於 plan.actualStopTime」—— 修正前那兩條不成立。
+
 
 ### 3.8 `Core/BaseSlotMachine.ts`
 
@@ -835,6 +972,56 @@ if (difference % 2 !== 0) {
 ```
 
 **這個 throw 刪掉。** 每格等寬之後不可能出現半格差，各軸剩餘距離必為整數格。同步計算簡化成「取各軸剩餘 cell 數最大值，差額補 1×1」。
+
+#### 決議 36：機台是顯示物件，Reel 是它的子項，mask 蓋在機台
+
+`BaseSlotMachine` 原本是純 class、不在場景樹上。這與 Cocos 版不符 —— 那邊是 `@ccclass export class BaseSlotMachine extends Component`，掛在 Node 上，本來就是場景的一員。
+
+**決議：`extends eui.Component`。**
+
+選 `eui.Component` 而非 `egret.DisplayObjectContainer`：它是唯一吃得下 `skinName` 的類別，也是能出現在 Egret UI Editor「Custom」面板的前提（見 [Egret-Slot-Exml-Editable-Surface.md](Egret-Slot-Exml-Editable-Surface.md) §1.1），對應規劃中的 `SlotMachineSkin.exml`。與 `BaseReel` 一致。
+
+連帶兩件事：
+
+| 項目 | 內容 |
+|---|---|
+| `init()` 收養 Reel | `adoptReels()`：`reel.parent !== this` 的就 `addChild`。exml skin 產生的 Reel 本來就掛好了，不會動到 |
+| mask 移到機台層 | `BaseSlotMachine.createDisplayMaskRect(crossSize)`。沿軸長度取各軸共用的 `visibleCellCount × cellPitch`；**跨軸長度由呼叫端給** —— 那取決於各軸怎麼擺與美術寬度，是場景／skin 的佈局，框架不知道 |
+
+`BaseReel.createDisplayMaskRect()` 保留，給需要逐軸各自遮罩的情況。
+
+> Cocos 版的框架裡**完全沒有 mask 程式碼**，遮罩是場景自己掛 Mask component。Egret 版提供矩形的產生、由呼叫端指派，比原版前進一步。
+
+#### 決議 37：推進抽成 `update(deltaTime)`，心跳只是預設的那層殼
+
+`BaseSlotMachine` 原本把「從引擎取時間」和「推進」焊在同一個 `_tickHandler` 裡。對照之下 `BaseReel.updateMovement(deltaTime)` 是公開入口、零引擎相依 —— 機台是整個框架**唯一**還自己抓引擎時間的地方。
+
+```ts
+public update(deltaTime: number): void        // 推進，機台層唯一入口
+protected startTicking(): void                // private → protected
+protected stopTicking(): void
+public static readonly MAX_DELTA_TIME         // private → public
+```
+
+**鉗上限留在殼，`update()` 不鉗。** 0.1 秒上限防的是分頁切回來的時間跳躍，那是**時間源**的性質；鉗在 `update()` 裡會讓 `update(0.5)` 靜默只前進 0.1，對測試與外部驅動都是陷阱。
+
+覆寫 `startTicking()` 成不做事即可改由外部驅動 —— 這條路徑的價值不只是測試：`egret` 在本類別只出現三次（`getTimer` / `startTick` / `stopTick`），全在這兩個方法裡，關掉之後整條路完全不碰引擎。
+
+##### 為什麼心跳仍然用 `startTick` 而不是 `ENTER_FRAME`
+
+曾評估改用 `Event.ENTER_FRAME`，**否決**。查證結果：
+
+| | `startTick` | `ENTER_FRAME` |
+|---|---|---|
+| 觸發 | 每個 rAF（`SystemTicker.update()` 開頭，在 frameRate 閘門**之前**） | 只在通過閘門、真正渲染的幀 |
+| 帶時間 | `timeStamp`（毫秒） | **沒有** —— `dispatchEventWith(Event.ENTER_FRAME)` 沒傳 `data` |
+| 前提 | 只相依一個函式 | **必須有一個 DisplayObject 當事件源**（`DisplayObject.$addListener` 把自己推進 `$enterFrameCallBackList`） |
+
+「只有 `startTick` 帶時間」不是真正的理由 —— `egret.getTimer()` 是公開函式（`Date.now() - sys.$START_TIME`），兩條路都要自己相減。真正的理由是**語意**：引擎對 `startTick` 的說明是「註冊並啟動一個計時器」，那正是一個非顯示協調者要的東西；`ENTER_FRAME` 是顯示物件的每幀回調。
+
+至於「ENTER_FRAME 頻率對齊渲染、不做白工」：實際估算 5 軸 × 11 格，60Hz 對 30Hz 多出約 1,650 次屬性寫入／秒，在 JS 裡量不出來，而 Movement 是時間驅動的，多推進幾次不影響正確性。**省下的極少。**
+
+> 補記：決議 36 之後機台已經是 DisplayObject，`ENTER_FRAME` 的「要有事件源」前提消失了。但上面的語意理由與效益評估不變，所以維持 `startTick`。要改的話現在只是換掉殼，`update()` 不動。
 
 ### 3.9 `Reel/BaseReelIcon.ts`
 
@@ -948,6 +1135,94 @@ public getVisibleIcons(): BaseReelIcon[];
 
 > 這一項同時把 [Port-Completeness-Audit.md](Port-Completeness-Audit.md) §4 的缺口 2 與缺口 3 一起結掉 —— 缺口 3 原本卡在「『有交集』的判準要先討論」，上面那條就是判準。剩下的只有「要不要再開一個回傳 Runtime 的版本」。
 
+#### 決議 38：Icon 收在普通容器裡，不直接掛在 `BaseReel` 上
+
+```text
+BaseReel (eui.Component)
+  └─ _iconLayer (egret.DisplayObjectContainer)   ← 建立時加一次，之後不動
+        └─ icon × stripCellCount
+```
+
+`eui` 系的容器會在每次子項增刪時強制重新測量：
+
+```ts
+// src/extension/eui/core/UIComponent.ts:1847-1867
+export function implementUIComponent(descendant, base, isContainer?): void {
+    ...
+    if (isContainer) {
+        prototype.$childAdded = function (child, index) {
+            this.invalidateSize();
+            this.invalidateDisplayList();
+        };
+        prototype.$childRemoved = function (child, index) { /* 同上 */ };
+    }
+}
+```
+
+`eui.Component` 與 `eui.Group` 兩個註冊時都傳 `true`（`Component.ts:1023`、`Group.ts:905`），而普通 `DisplayObjectContainer` 的同名方法是**空實作**（`DisplayObjectContainer.ts:681`）。
+
+關鍵在 `setChildIndex()` —— `displayPriority` 重排正是靠它，而它會**同時觸發兩者**：
+
+```ts
+// DisplayObjectContainer.doSetChildIndex()
+if (lastIndex == index) { return; }        // ← 位置沒變就早退，兩個 hook 都不跑
+this.$childRemoved(child, lastIndex);
+this.$children.splice(lastIndex, 1);
+this.$children.splice(index, 0, child);
+this.$childAdded(child, index);
+```
+
+**成本是有條件的，不是持續在付**：`sortIconDisplayLayers()` 的次要排序鍵就是目前的 child index，所以權重全等時排序結果等於現狀、每次 `setChildIndex` 都是 no-op → 零失效。真正付錢的是牌庫裡有不同 `displayPriority` 的 Symbol 時（決議 19 保留它的使用情境）。
+
+內移是**預防**，不是止血 —— 成本五行，換掉一個會靜默出現的坑。mask 仍然設在 `BaseReel`（或機台）上，照樣夾住整棵子樹；`_iconLayer` 位置是 `(0, 0)`，icon 座標完全不變。
+
+> 這也回到 [Egret-Slot-Exml-Editable-Surface.md](Egret-Slot-Exml-Editable-Surface.md) §3.2 的原規劃（「Icon 掛在殼內的普通 `DisplayObjectContainer`」）。該文原本連 `BaseReel` 都規劃成純 class 另加 `ReelView` 殼，實作沒有走那條 —— `BaseReel` 直接 `extends eui.Component`。差異保留，只把 Icon 那一層的理由拿回來。
+
+#### 決議 39：跨軸表演搬的是表演物件，不是 Icon
+
+大 Symbol 要蓋過隔壁軸時，巢狀容器表達不出交錯的 z 序 —— reel A 的全部子項一定整批在 reel B 的全部子項之前或之後。
+
+**決議：不靠 z 序交錯，改用 overlay 層 + 單向跟隨。**
+
+```text
+BaseSlotMachine  (mask 在這 → overlay 也被裁切)
+  ├─ reel[k] → _iconLayer → icon[k] → 美術子物件
+  └─ overlay                          ← 層級在全部 reel 之上
+```
+
+| 規則 | 內容 |
+|---|---|
+| **Icon 永遠不搬** | 位置維持由框架獨佔（`syncIcon()` 每幀寫 `icon.x/y`） |
+| **搬的是掛在 Icon 上的表演物件** | Icon 持有它的引用 |
+| **跟隨是單向的** | 進入轉移狀態後每幀 `表演物件.worldPos = icon.worldPos` |
+| **overlay 在機台 mask 之內** | 搬上去的表演物件仍然受顯示窗裁切 |
+
+因為跟隨是單向的，框架照常寫 icon 座標**不會**跟 overlay 上的擺位打架 —— 原本擔心要在 `syncIcon()` 加 detach 判斷，不需要。`localToGlobal()` / `globalToLocal()` 兩個都在（`DisplayObject.ts:1807` / `:1765`）。
+
+**尚未實作。要做時框架要補三樣：**
+
+1. **overlay 容器** —— 機台子項，層級在 reel 之上
+2. **每幀跟隨的驅動** —— **不能掛在 `syncAllIcons()` 上**：它只在 Movement 的值變化時才跑，停穩且效果播完之後就不跑了，而中獎表演正好都在那個時候。要掛在 `BaseSlotMachine.update()`（決議 37 抽出來的那個，每幀都跑）。機台自己動時（整台震動、縮放）world position 會變而 `syncAllIcons()` 不會觸發，也只有機台層的每幀迴圈接得住
+3. **`BaseReelIcon` 的表演物件契約** —— 目前它是純空殼，美術在遊戲子類別裡私有（`TestReelIcon._art`）。框架要驅動跟隨就需要基底層有這個引用。**這是唯一會動到現有公開介面的一項**
+
+> 這條路對應 Game1016 的 `SymbolAniHandoffManager`（422 行）。[ReelTemplate-v3-Reference-Study.md](ReelTemplate-v3-Reference-Study.md) §10 記著「新 Framework 目前把這塊完全排除在外，但遲早要面對」—— 現在知道要面對的形狀了。
+
+#### 決議 40：Reel 與 Reel 之間的層級排序，用保留槽位的做法
+
+reel 之間也要能排層級高低。不能照抄 `sortIconDisplayLayers()` 的「排完指派 0…n-1」—— 那是因為 `_iconLayer` 整個容器由框架獨佔；機台底下還會有外框、光暈那類美術子項，指派連續索引會把它們一起推走。
+
+**決議：收集 Reel 目前占用的那幾個 child index，排序後依序塞回同一批槽位**，非 Reel 的子項一格都不動。
+
+```text
+機台子項：  [底框, reel0, reel1, reel2, 上框]
+Reel 槽位： 索引 1、2、3
+重排後：    [底框, reel2, reel0, reel1, 上框]     ← 兩個框都沒動
+```
+
+配合 `doSetChildIndex()` 的早退，只有真的換位的 Reel 才付失效成本。不另外插一層 `_reelLayer`，因為那會讓 exml skin 的子項被搬離 host，換 skin 時 eui 的清理會跳過它們（`Component.ts:279-287` 的 `if (child.$parent == this)`），留下孤兒。
+
+**尚未實作。** 層級優先度的**來源**也還沒定：`displayPriority` 是 `ReelSymbolRegistry` 上「這張牌」的屬性，而 Reel 層要的比較像「這一輪哪一軸有溢出的大牌」，是 per-spin 的動態值，不是同一個軸。與 `displayPriority` 一起在整頓機台時設計。
+
 ### 3.10 軸向效果設定：兩個同構介面合併成一個
 
 **問題**：`ReelStartEffectConfig`（27 行）與 `ReelBounceConfig`（26 行）**欄位完全相同** —— `enabled` / `distance` / `outwardDuration` / `returnDuration` / `outwardEasing` / `returnEasing`。而 `ReelBounce.ts:6-13` 內部還有第三份一模一樣的私有 `ReelAxisEffectConfig`。
@@ -1059,7 +1334,7 @@ node temp/tests/tests/CoreGeometry.test.js
 
 > Cocos 版當初的 Phase 4 verification 用的是同一套手法，只是 stub 的對象是 `cc`。
 
-**執行結果**：138 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）、決議 34 與 `getGroupIcons()` 29 項（`8`～`8d`，§3.9）、`getVisibleIcons()` 在截斷盤面與滾動中 14 項（`9`／`9b`，§3.9）、四方向 18 項（`10`～`10c`，§2.5）。
+**執行結果**：175 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）、決議 34 與 `getGroupIcons()` 29 項（`8`～`8d`，§3.9）、`getVisibleIcons()` 在截斷盤面與滾動中 14 項（`9`／`9b`，§3.9）、四方向 18 項（`10`～`10c`，§2.5）、多軸協調、守門與 Turbo 同步兩個順序 37 項（`11`～`11j`，§3.6／§3.8）。
 
 
 
@@ -1089,7 +1364,7 @@ node temp/tests/tests/CoreGeometry.test.js
 
 - **`onHalfCellComplete` 這個對外 Callback 要不要保留？** 交接改成每整格固定執行（§3.4）之後，它與交接時機脫鉤。若沒有遊戲端在用第一個半格的時機，傾向保留 Callback 但退回單純的時間通知；待確認。
 - **`reconfigureStoppedLayout()` 的展開行為**：1×1 展開成 1×N 時，多出來的格子從哪裡取、原本那些 runtime 的 `groupOffset` 怎麼重算，還沒設計。
-- **大 Symbol 的中獎動畫／handoff**：`getGroupIcons()` 這個 on-demand 入口已實作（§3.9），實際動畫要掛在 head 還是另開 overlay 層沒討論。
+- **大 Symbol 的中獎動畫／handoff**：形狀已定（決議 39：overlay 層 + 搬表演物件 + 單向跟隨），**尚未實作**；三個待補項與唯一會動到公開介面的那一項見 §3.9。
 - **`cellSpan <= visibleCellCount` 要不要加驗證？** 決議 32 已定下這條限制，但 `registerSymbolCells()` 與 `init()` 目前都不擋。超過時 `createExitTruncationCells()` 會靜默退回「只補進場端」，盤面被單一 Symbol 填滿時會算錯。
 - **Icon 數量對 Egret 的影響**：strip 從 `visible + 2` 變成 `visible + 2 × maxSpan`；Egret 沒有內建 Pool（見 Port Map §11），5 軸 × 11 格 = 55 個顯示物件要實測。
 - **`ReelLayoutSource` 的排列順序約定**：目前沿用 Cocos 版的資料流方向（進場端 → 退場端），實務上沒出過問題。曾評估改成畫面閱讀順序（與 Server 結果一致、企劃不必考慮滾動方向，欄位須改名 `leadingBuffer` / `trailingBuffer`，並由 `BaseReel` 做三段對調＋各自反轉的轉換），**暫不採用**，需要時再調整。

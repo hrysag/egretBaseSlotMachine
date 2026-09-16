@@ -81,7 +81,8 @@ export class ReelSymbolRegistry {
      * BaseReel 用它決定進場／退場 buffer 各要幾格：整組必須能完整
      * 容納在 buffer 內，玩家才不會看到 group 組裝到一半的樣子。
      *
-     * 多軸情境建議由 Config 明寫 maxCellSpan 覆蓋此值 —— 否則某一軸
+     * 多軸情境建議由 Config 明寫 maxCellSpan 覆蓋此值 —— 不是因為各軸
+     * 必須一致（實測不必），而是讓 strip 長度不隨牌庫悄悄改變。否則某一軸
      * 的牌庫剛好沒有大牌時，該軸的 strip 會比其他軸短，Turbo 同步
      * 停輪的幾何前提就不成立。
      *

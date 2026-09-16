@@ -85,6 +85,13 @@ public update(forceUpdate?: boolean): void {
 
 預設 `$frameRate = 30`（`SystemTicker.ts:162`）。
 
+**後續補查（選定心跳時重讀原始碼）**，兩點修正本節原本的判斷：
+
+1. **`egret.getTimer()` 是公開函式**（`getTimer.ts:49`，`Date.now() - sys.$START_TIME`），所以「只有 `startTick` 帶時間」不構成選它的理由 —— 走 `ENTER_FRAME` 也自己相減得出 deltaTime。
+2. **`ENTER_FRAME` 必須有一個 DisplayObject 當事件源。** `DisplayObject.$addListener()` 在監聽 `ENTER_FRAME` 時把自己推進 `$enterFrameCallBackList`（`DisplayObject.ts:2185`），註冊時**沒有** stage 檢查，所以離線物件照樣收得到 —— 但非顯示物件（例如純 class 的協調者）根本沒有這個入口。
+
+真正選 `startTick` 的理由因此是**語意**：引擎對它的說明是「註冊並啟動一個計時器」，那正是協調者要的；`ENTER_FRAME` 是顯示物件的每幀回調。詳見主線 doc 決議 37。
+
 ### 1.3 對 Slot 的結論
 
 **用 `startTick` + 自己算 deltaTime**，並且**只註冊一個**，由 `BaseSlotMachine` 統一推進所有 Reel：
@@ -134,6 +141,10 @@ private onTick = (timeStamp: number): boolean => {
 | C. 繼承 `eui.Group` | 可用 exml 佈局與約束 | 只有在需要 EUI 佈局約束時才值得；`eui.Group` 會在子項增刪時自動 `invalidateSize()`，滾輪每半格搬 Icon 會一直觸發測量，**對 Slot 是純負擔** |
 
 `eui.Group` 的自動失效來自 `implementUIComponent(Group, egret.DisplayObjectContainer, true)`（見 `Egret-EUI-Group-vs-DisplayObjectContainer.md`）。滾輪每秒搬幾十次 Icon，選 A 或 B 才不會每次都跑一輪 measure。
+
+> **實作走的是第四條，本節的推薦沒有被採用。** `BaseReel extends eui.Component`（`BaseSlotMachine` 也是，見主線 doc 決議 36），但 Icon **不掛在它身上** —— 收在內部一個普通 `DisplayObjectContainer`（決議 38）。這樣同時拿到「可以出現在 UI Editor 的 Custom 面板」與「Icon 重排不觸發測量」。
+>
+> 補查確認 `eui.Component` 與 `eui.Group` 註冊時都傳 `isContainer = true`（`Component.ts:1023`、`Group.ts:905`），所以本節對 `Group` 的警告對 `Component` 一樣成立 —— 這是把 Icon 內移的直接理由。
 
 ### 2.2 `BaseReelIcon` 該繼承誰？
 
