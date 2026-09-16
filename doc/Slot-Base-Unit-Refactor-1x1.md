@@ -6,6 +6,7 @@
 > 後續：[Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md) —— 移植完成後的責任重劃與瘦身量測，決議 21 起編號於該文
 > 執行期：[Core-Runtime-Flow.md](Core-Runtime-Flow.md) —— 從心跳到停輪的實際路徑流程圖
 > 掉落式：[Drop-Module-Readiness.md](Drop-Module-Readiness.md) —— Drop 模組的現況評估與前置決議，決議 33 起編號於該文
+> 交接：[SESSION-2026-09-17-Machine-Display-And-MultiReel.md](SESSION-2026-09-17-Machine-Display-And-MultiReel.md) —— 決議 34～40 的落地經過、四個 bug、以及還沒做的事
 > 盤點：[Port-Completeness-Audit.md](Port-Completeness-Audit.md) —— Cocos ↔ Egret 的成員層級對照、四個真缺口、以及「搬完但沒跑過」的清單
 > 本文行號以 Cocos 完成版為準。
 
