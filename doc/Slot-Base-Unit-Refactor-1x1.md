@@ -46,6 +46,14 @@
 | 38 | **Icon 收在 `BaseReel` 內的普通容器**，避開 eui 在子項增刪時的強制重測量（見 §3.9） |
 | 39 | 跨軸表演**搬的是表演物件不是 Icon**，Icon 位置維持框架獨佔，表演物件每幀單向跟隨 worldPos（見 §3.9）。未實作 |
 | 40 | Reel 之間的層級排序用**保留槽位**，不指派連續索引，以免推走機台底下的美術子項（見 §3.9）。未實作 |
+| 41 | **自動旋轉移出框架**：`autoSpin()` / `stopAutoSpin()` 及其狀態與接續鏈全部刪除，改由遊戲流程層持有（見 §3.8） |
+| 42 | **聽牌時間在規劃時算定**（含 `speedMultiplier` 換算與切速邊界）；`fastMode` 或急停時**框架不排聽牌時間**，`onListenStart` / `onListenEnd` 照發由遊戲層決定（有設定聽牌的軸一律成對發出，已實作）；聽牌途中急停**依照當下速度**；`speedMultiplier` 限制 `>= 1`（見 §3.8）。已實作。**聽牌起點由決議 46 改為前一軸實際停輪** |
+| 43 | **普通模式急停補「剛好足以依序停止」的表演格**：砍完表演格後依停輪順序逐軸推算，早於前一軸就補 `ceil(差 / mi)` 格；與 Turbo 同步同一套機制、補的數量不同（見 §3.8） |
+| 44 | **啟動順序與停止順序分開設定**：`SlotMachineSpinConfig` 新增選填 `stopTimings`（`reelIndex` + `stopDelaySeconds`），停止順序照它的陣列；未填時與現在相同（見 §3.8） |
+| 45 | **停輪量化誤差壓到 0**：每格邊界重算本格時間，只拉長不壓短，上限 ε = +25%；「不晚停」改以連續時間計（畫面最多晚一幀）；規劃以各軸**實際啟動那一幀**為原點（見 §3.7）。已實作 |
+| 46 | **聽牌從前一軸實際停下起算**：聽牌軸目標 = 前一軸**實際**停輪 + `duration`（決議 42 用的是規劃停輪，伺服器晚到時聽牌被吃掉）；規則已實作；最初的「延後提交」做法已由決議 47 取代（見 §3.8） |
+| 47 | **資料到達時沿停止順序直接推算每軸停輪**：普通軸 = max(規劃, 前一軸停輪 + 軸間距, 本軸最早能停)、聽牌軸 = max(前一軸停輪 + `duration`, 本軸最早能停)，立刻提交。伺服器晚到時軸間隔與順序照樣保留（本決議前 Cocos 版與 Egret 版都會亂）；連帶修正啟動效果播完那一幀時間被用兩次（見 §3.8）。已實作 |
+| 48 | **Turbo（`fastMode`）停止間隔為 0**：`stopDelaySeconds` 一律當 0、只保留停止順序，與 Cocos 移植版相同；已寫進 `SlotMachineSpinConfig` 說明（見 §3.8）。已實作 |
 
 > 決議 21～29 在 [Core-Responsibility-Slimming.md](Core-Responsibility-Slimming.md)、決議 33 在 [Drop-Module-Readiness.md](Drop-Module-Readiness.md)。決議 30～32、34～40 因為屬於 group 模型與其顯示層對應，記在本文。
 
@@ -567,10 +575,15 @@ const stripOffset    = travelled - cellsTravelled * cellPitch;   // ∈ [0, pitc
 
 另外澄清一點：環形游標並沒有多給「icon↔cell 配對固定」這個好處 —— `_symbols[i]` ↔ `_icons[i]` 本來就一直配對著。
 
-> **Egret 版只轉 `_symbols`，`_icons` 完全不動。** Cocos 版是兩條一起 `pop` / `unshift`；移植後改成「Icon 是固定的槽位，第 k 格的資料每次交接後重新綁到固定待在第 k 格的那個 Icon」（`ReelIconManager.recycleExitedCell()` 只碰 `_symbols`，配對由 `syncIcon(k)` 維持）。
+> **（修正前的描述，2026-09-27 已改成兩條一起轉，見下一節）Egret 版只轉 `_symbols`，`_icons` 完全不動。** Cocos 版是兩條一起 `pop` / `unshift`；移植後改成「Icon 是固定的槽位，第 k 格的資料每次交接後重新綁到固定待在第 k 格的那個 Icon」（`ReelIconManager.recycleExitedCell()` 只碰 `_symbols`，配對由 `syncIcon(k)` 維持）。
 >
 > 兩個推論：① 滾動期間 `ReelIconLayout.index` 對同一個 Icon 是常數；② 一次交接會讓**多數槽位的內容換人**，不是只有被回收的那一格 —— 決議 34 的觸發頻率實測就是這個原因（§3.9）。
 > 掉落式的分割重排要兩條陣列一起動，屆時 `index` 才會真的變，所以它仍然每幀重推而不由 Icon 自己記住。
+
+#### 已修：空殼沒有跟著牌轉（2026-09-27）
+
+上面那段「Egret 版只轉 `_symbols`」是**修正前**的描述。現在空殼與資料一起轉（與 Cocos 版相同，`ReelIconManager.rotateExitedIconToEntry()`），
+`ReelIconLayout.index` 每次交接都會變。經過、驗算與斷言見 [SESSION-2026-09-27-Rolling-Fixes.md](SESSION-2026-09-27-Rolling-Fixes.md) §2。
 
 ### 2.10 掉落式（Drop）對位置模型的影響
 
@@ -961,6 +974,180 @@ return (handoffCells - 1) * 2;
 
 斷言見 `tests/CoreGeometry.test.ts` §11d 的「實際停輪時間等於 plan.actualStopTime」—— 修正前那兩條不成立。
 
+#### 決議 45：把量化誤差壓到 0（已實作）
+
+> **2026-09-26 定案並實作。** 本節下方的「現況誤差界線」「提案」「驗算」是定案前的紀錄，保留作依據；
+> 其中「決議方向：維持早停」已被本決議推翻，公式以本段為準。實作與驗算見本段末的「實作」。
+
+##### 定案內容
+
+**做法**：每個 Cell 邊界重算本格時間。
+
+```text
+本格時間 = clamp((目標 − 現在) / 剩餘格數, 原速, 原速 × (1 + ε))
+```
+
+- **只拉長、不壓短**（下限就是原速，與下方早期提案的 `base × (1−ε)` 不同）
+- **「現在」用連續時間**：本軸逐格累加實際走過的時間，不用 `elapsedRollTime`（它每幀開頭就吃掉整幀，最多領先真實邊界一幀）
+- **聽牌分段**：切速前以切速邊界為目標、切速後以真實聽牌結束為目標（接決議 42）
+- **急停後停止修正**：依照當下速度走完（決議 43 推算剩餘秒數的前提）
+
+**三個決定**：
+
+| # | 問題 | 決定 | 理由 |
+|---|---|---|---|
+| 1 | 「不晚停」的定義改變 | **接受** | 連續時間準時；停輪落在幀中間，畫面上最多晚一幀（60 fps 0.017 秒、30 fps 0.033 秒），遠小於現況最多早一格（Normal 0.08 秒）。企劃若要嚴格的整輪上限，把設定時間提早一幀填，框架不為此改動 |
+| 2 | 實際原點 | **一起做** | 規劃停輪時以各軸**實際啟動那一幀的開頭**為原點，不用規劃的啟動時刻。只做自我修正時決議 44 的停輪反轉仍有 20 組，加上後 **0 組** |
+| 3 | ε | **+25%** | 每格拉長中位數約 1%、p99 7.1%、最大 20%（聽牌切速後剩餘格數少時）；+25% 從未觸發。早期寫的「可收緊到 ±15%」是聽牌分段前量的，已不適用 |
+
+碰到 ε 上限時補不完的部分就放著，結果是稍微早停 —— 等於局部退回現況，不會出錯。
+
+##### 實作（已完成）
+
+`moveInterval` 拆成兩個欄位：`BaseReel._moveInterval` 維持**基準**（聽牌切速改它，`moveInterval` getter 讀它），
+**本格時間**不另存欄位 —— 每格排入時由 `calculateNextCellDuration()` 現算，記在 `_cellDuration`。
+
+| 位置 | 內容 |
+|---|---|
+| `BaseReel._cellStartTime` / `_cellDuration` | 本軸連續時間：第一格從 `beginFirstCellMovement(cellStartTime)` 起算（`startRoll()` 進來是 0；啟動效果播完才進來是**那一幀的開頭**，因為同一幀的 Movement 吃的是整幀），每個邊界 `+= _cellDuration` |
+| `BaseReel.calculateNextCellDuration()` | 本格時間 = `clamp((目標 − 現在) / 剩餘格數, 原速, 原速 × (1 + MAX_CELL_STRETCH))`。有預定切速時目標是 `switchAtSeconds`、格數數到切速；已提交時目標是 `_correctionTarget`、格數 `_cellsUntilStop`；急停／即停之後回原速 |
+| `BaseReel.MAX_CELL_STRETCH` | `0.25`（ε） |
+| `BaseReel.countCellsBeforeTarget(now)` | 提交時到目標放得下幾格，取 floor（多一格就一定晚停）。有預定切速時分兩段：切速前的格數 + `floor((聽牌結束 − switchAtSeconds) / 聽牌速度)` |
+| `BaseReel._cellsUntilStop` / `_correctionTarget` | 提交時寫入（`ReelStopFlow.tryCommitResultAtHandoff()` 回傳到停輪的格數），每個邊界遞減。聽牌軸的目標是**聽牌真實結束**（`_scheduledSpeedChange.stopSeconds`），不是原速等效時間 |
+| `BaseReel.planListenSpeedUp()` | 下一個邊界改用連續時間（`_cellStartTime + _cellDuration`）；聽牌在第一個可切速的邊界之前就結束時不排切速 |
+| `ReelStopFlow.tryCommitResultAtHandoff(…, now, availableCellCount)` | 「現在」改用邊界的連續時間；表演格預算 = `availableCellCount − 結果進場格數`。回傳到停輪的格數（原本回傳 boolean） |
+| `ReelStopFlow.retimeStopPlan()` / `BaseReel.retimeStopPlanForCorrection()` | `lastStopPlan.actualStopTime` 改成修正預計達到的時刻 `min(目標, 格線 × (1 + ε))`（僅供除錯） |
+| `BaseSlotMachine._originByReel` / `getReelOrigin()` | 實際原點：`startOneReel()` 記下本幀開頭的 `_spinElapsed`（`_frameStartElapsed`）。`createCurrentStopTimings()` 換成本軸時間時減它，停輪時刻本身仍照規劃的 startAt 排 |
+| `BaseMovement.TIME_EPSILON` | `1e-9`：指令只差浮點雜訊就算本幀完成（見下方「多抓到的一個」） |
+
+**多抓到的一個：同一刻停下被拆到兩幀。** 修正與實際原點做完之後，規劃同時停的軸在**連續時間**上已完全相同
+（差 ~1e-15），但停輪時刻正好落在幀邊界時（例：2.8 = 168 × 1/60，設定值多是整數倍，很常見），
+`BaseMovement` 的 deltaTime 與每段 duration 各自累加，差一點的那一方被推到下一幀 —— 看到的是分屬兩幀、
+回調順序顛倒（驗算 192 組中 8 組，全是 `stopDelaySeconds = 0` 且停輪時刻為幀長整數倍）。
+`BaseMovement.update()` 改成剩餘時間 ≤ `TIME_EPSILON` 就在本幀完成，時間最多超前 1e-9 秒。
+
+**驗算**（框架實作本身，外部只量測連續時間：`_originByReel[i] + reel._cellStartTime`）：
+
+| 情境 | 組數 | 結果 |
+|---|---:|---|
+| 普通模式不急停（`mi` 3 種 × 錯開 4 種 × 目標 3 種 × 平／截斷盤面 × 幀長 1/60、1/30、0.1） | 216 | 連續時間誤差 −4e-16 ～ 2e-15；盤面錯 0、回調順序錯 0、反轉 0 |
+| `stopTimings` 右到左（含 `stopDelaySeconds = 0`） | 192 | 誤差 ≤ 3e-15；反轉 0、回調順序錯 0（`TIME_EPSILON` 之前 8 組） |
+| 聽牌（`m` 1／1.5／2／3 × `duration` 4 種 × 聽牌軸 `[2]`／`[2,3]`／`[1,3]` …） | 1,728 | 聽牌結束誤差 0；反轉 0、盤面錯 0 |
+| `fastMode`（不急停／先按／提交後 0.05） | 54 | 同步離散 0 |
+| 普通模式急停依序（決議 43） | 360 | 反轉 0、盤面錯 0、回調順序錯 0 |
+| 聽牌途中急停 | 54 | 反轉 0、盤面錯 0 |
+| 啟動效果中規劃聽牌（本軸還在啟動效果裡） | 48 | 晚停 0、早停 0（不做切速前修正時最早 −6.67e-3） |
+
+每格拉長（948,193 格，其中 338,042 格有拉長）：拉長的格中位數 0.35%、p99 3.95%、最大 17.5%；**碰到 ε 上限 0 格**。
+
+**斷言**：§11d／§11e／§11m／§11p 改寫成新界線（看到的時刻「不早、最多晚一幀」；§11e 改成
+`actual = max(requested, earliest)` —— earliest 改以連續時間計之後，第 2 軸的 0.5 不再早於 earliest，修正會對準它）；
+§11d 加「停輪計畫就是要求的時間」、§11e 加「確實有軸被鉗制」各 1 項；
+新增 §11q（11 項）：決議 44 的同時停（錯開 0.1，停在 2.8 幀邊界）、錯開 0.13（非幀長整數倍）、啟動效果中規劃聽牌、低幀率 10 fps。
+共 **254 項**全過（241 + 13）。
+
+**分別還原**：
+
+| 還原 | 紅 |
+|---|---:|
+| 不修正（每格恆為原速） | 8 |
+| 不用實際原點 | 3 |
+| 拿掉 `TIME_EPSILON` | 2 |
+| 聽牌切速前不修正 | 1 |
+
+> **已知限制**：`lastStopPlan.actualStopTime` 是**預測**（`min(目標, 格線 × (1 + ε))`），急停在修正途中發生時，
+> 已拉長的格子不會被扣回，計畫與實際會差那幾格的拉長量。計畫僅供除錯，停輪不讀它。
+
+##### 已修：TIME_EPSILON 收尾仍會差一點點（2026-09-27）
+
+判定走完時 `elapsed + (duration − elapsed)` 在浮點下可能比 duration 小，幀長不規則時丟掉剩餘時間、畫面倒退半格一幀。
+上表的驗算用固定幀長，所以沒掃到。經過、驗算與斷言見 [SESSION-2026-09-27-Rolling-Fixes.md](SESSION-2026-09-27-Rolling-Fixes.md) §1。
+
+##### 現況的誤差界線（1596 組實測）
+
+> **實際停輪不晚於 `targetStopSeconds`，最壞早一個 `moveIntervalSeconds`。**
+
+停輪只能落在完整 Cell 邊界（決議 15），而每格恆耗 `moveInterval`，所以可停時刻是一組間距 `moveInterval` 的離散點；兩個 `Math.floor` 一律往下取。
+
+| 量測 | 界線 | 實測 |
+|---|---|---|
+| `realized − plan.actualStopTime` | 0 | ~1e-13（浮點噪音） |
+| 單軸 `realized − requested`（未鉗制，823 組） | `(−mi, 0]` | −0.0917 ～ 0.0000 秒，零違反 |
+| 多軸相鄰軸間隔 − `staggerStart`（未鉗制，96 組） | `(−mi, +mi)` | −0.0805 ～ +0.0805 秒 |
+| Turbo 同步離散（48 組） | 0 | 0.000e+0 秒 |
+
+多軸是兩軸各自量化的誤差相減，所以範圍加倍且雙向。換算成畫面（`frameRate = 30`）：Normal（0.08）最壞 **2.4 格**、Turbo（0.05）1.5 格、L2（0.016）0.5 格。
+
+##### 決議方向：維持早停（已被決議 45 推翻）
+
+> 下面是當時的判斷。決議 45 改以連續時間計「不晚停」，畫面上最多晚一幀，換取誤差歸零。
+
+曾評估 `round`（誤差砍半成 ±0.5 格）與「允許晚停但不超過 1 frame」，**都否決**。理由不是 §3.7 原本寫的「順序可能反轉」（那條在「`staggerStart` 設成 `moveInterval` 整數倍」的填值規則下已不成立），而是：
+
+> 企劃真正在意的是「整輪要在 N 秒內停完」這條**上界**（1016 的 `roll.totalRoll`，L0 0.8 秒／L1 0.5 秒）。只會早不會晚，整輪才不可能超支。
+
+而且算過：允許晚停 T 秒時誤差界線是 `max(mi − T, T)`，要 ≤ 1 frame 得 `mi ≤ 2T = 0.0667` —— Normal 的 0.08 到不了。
+
+##### 提案：每格邊界自我修正（已驗算，未實作）
+
+「停在 Cell 邊界」是**位置**的約束，不是**時間**的約束。現在時間也被量化，只是因為每格恆耗 `moveInterval`。改成每次排下一格時重算：
+
+```text
+remainingCells  在結果提交時初始化 = round((actualStopTime − elapsed) / base)，
+                之後每個邊界遞減；actualStopTime 變動（急停改寫）時重新初始化
+target          = max(requestedStopTime, earliestStopTime)
+duration        = clamp((target − elapsed) / remainingCells,
+                        base × (1−ε), base × (1+ε))
+```
+
+三個性質：**自我修正**（急停砍格、Turbo 插格之後自動跟上，不需要重算通知）、**零新狀態**（除了剩餘格計數）、**改動點集中**（`_secondHalfCompleteHandler` 那行 `queueOneCellMovement(this._moveInterval)`）。
+
+> **剩餘格數必須從 `actualStopTime` 推，不能從 `requested` 推。**
+> `requested ≥ actual`，用它會高估格數、每格算得太短，結果**比現況更早停**。
+> 第一版驗算就是栽在這裡（Normal 從 −0.0400 惡化到 −0.0755）。
+
+##### 驗算結果（`setActiveMoveInterval()` 從框架外模擬，未改框架）
+
+| | 現況 floor | 提案 |
+|---|---|---|
+| 單軸 Normal（mi 0.08） | −0.0400 ～ 0 | **−0.0000 ～ 0.0000** |
+| 單軸 Turbo（mi 0.05） | −0.0500 ～ 0 | **−0.0000 ～ 0.0000** |
+| 單軸 L2（mi 0.016） | −0.0080 ～ 0 | **−0.0000 ～ 0.0000** |
+| 三軸軸間隔 | ±0.0803 | **±0.0003**（取樣步長，真值 ~0） |
+
+速度變動幅度（n = 8278 格）：範圍 −0.8% ～ +14.3%，**中位數 0.0%**、90% 2.0%、99% 6.3%。ε 設 ±25% 從未觸發，可收緊到 ±15%。（聽牌分段後最大值為 20%，15% 不夠；決議 45 定為 +25%）
+
+**對同步停輪零影響**（fastMode 三軸離散，含急停三種時機、平盤面與含截斷的大牌盤面）：
+
+| 情況 | 現況 | 提案 |
+|---|---|---|
+| 幾何相同 / delay 0 / target 相同 | 0.00e+0 | **0.00e+0** |
+| **幾何不同**（span 1/2/3、可視 3/4/5） | 0.00e+0 | **0.00e+0** |
+| `startDelaySeconds = 0.1` | 0.00e+0 | **0.00e+0** |
+| 各軸 target 不同（t / t+0.2 / t+0.4） | 4.00e-1 | 4.00e-1 |
+
+最後一列兩邊相同 —— 那是設定要求三軸停在不同時刻，框架照辦，不是缺陷。同步關係由補牌在更早的階段決定（補的是**格數**），提案的修正量在各軸之間一致，兩者不衝突。
+
+順帶：軸間隔誤差因此與「`staggerStart` 是否為 `moveInterval` 整數倍」脫鉤（`0.3 / 0.08 = 3.75` 也降到 0），那條填值建議變成非必要。
+
+##### 實作前必須先處理的衝突
+
+> **聽牌與本提案搶同一個欄位。** `BaseSlotMachine.runOneListenReel()` 呼叫
+> `setActiveMoveInterval()` 改速度，而本提案每格也要改。實作時必須把
+> **基準 `moveInterval`** 與 **本格時間** 拆成兩個欄位，聽牌改前者、
+> 自我修正算後者 —— 否則兩者互相覆蓋。
+>
+> **所以這一項排在聽牌之後做。**
+>
+> （更新：聽牌已實作，但決議 42 **沒有**拆欄位，所以拆欄位由決議 45 實作時處理。）
+
+另外兩條沒驗過的路徑，實作時要補斷言：**低幀率**（大 deltaTime、`drainPendingHandoffs()` 一次交接多格時剩餘格計數會不會失準）、**即停／停軸後重排**（本來就沒斷言）。
+
+**連帶結清**：決議 44 底下「規劃間隔小於一格時，不急停也會反轉」選 ③ 等本項。實作時加一組斷言：錯開啟動 0.1、
+`stopTimings` 右到左、`stopDelaySeconds = 0`，五軸實際停輪時刻差應趨近 0。
+
+驗算腳本在 scratchpad（`timing-sweep.js` / `multi-sweep.js` / `opt4.js` / `opt4-sync.js` / `step-check.js`），**session 結束會消失**，需要時照本節的公式與參數重建。
+
 
 ### 3.8 `Core/BaseSlotMachine.ts`
 
@@ -1023,6 +1210,696 @@ public static readonly MAX_DELTA_TIME         // private → public
 至於「ENTER_FRAME 頻率對齊渲染、不做白工」：實際估算 5 軸 × 11 格，60Hz 對 30Hz 多出約 1,650 次屬性寫入／秒，在 JS 裡量不出來，而 Movement 是時間驅動的，多推進幾次不影響正確性。**省下的極少。**
 
 > 補記：決議 36 之後機台已經是 DisplayObject，`ENTER_FRAME` 的「要有事件源」前提消失了。但上面的語意理由與效益評估不變，所以維持 `startTick`。要改的話現在只是換掉殼，`update()` 不動。
+
+#### 決議 41：自動旋轉移出框架
+
+**刪除的東西**（全部集中在 `BaseSlotMachine`，其餘檔案零引用）：
+
+```
+_autoSpinEnabled / _autoSpinMode
+autoSpin(mode) / stopAutoSpin()
+startNextAutoSpinIfNeeded()
+immediateStop() 內的 stopAutoSpin() 呼叫
+cleanup() 內的兩行重置
+completeStoppedSpin() 尾端的 await startNextAutoSpinIfNeeded()
+```
+
+連帶 `completeStoppedSpin()` 收回成同步方法，兩個呼叫端（`stopSpin()`、`waitForImmediateStop()`）去掉 `await`。
+
+**理由一：參考譜系裡沒有任何一個對應物長在滾輪框架內。**
+
+| | 位置 |
+|---|---|
+| v3 底層（`ReelTemplate/v3/Scripts`） | 搜 `auto` **零命中** |
+| 1016／1024 的入口 | `GameRoot.onStartAuto()` → `AbstractBasicGameController.onStartAuto()` |
+| 1016／1024 的「要不要下一輪」 | `AbstractBasicGameController.checkAutoNext()` |
+| 1016／1024 的狀態 | `GenericUIManager._isAutoMode`、`BasicGameViewManager.isAutoSpinMode` |
+| 1016／1024 的停止條件 | `GenericUI/Scripts/NewAutoSpin/`（`ConditionLine.isMeetsStopCondition()`） |
+
+決策資料是 `checkAutoNextData = { isEnterFeatureGame, odd, balance }`，外加 `checkBalanceAndProcessBtn()`
+的餘額檢查 —— **餘額、本局賠率、是否進 FG，滾輪框架一個都不該知道**。
+
+**理由二：觸發點差一整層。** 框架接在 `completeStoppedSpin()`（滾輪全停）；1016／1024 接在
+`onGameViewShowEndEventHandler`（**表演全部結束**），中間隔著 wild 位移、scatter 與算分。
+
+**理由三：它從沒被驗過。** 來源是 Cocos 完成版的 `run-workflow/slot-machine-controller/`
+（spec §5.2、plan §7 Phase 4）；`phase-4-checkpoint.md` 的驗證只有 `tsc --noEmit`，而
+「AutoSpin 連續兩輪與停止下一輪」被列在**待 Cocos 場景驗證**清單裡，該資料夾沒有
+`phase-4-verification.md`。checkpoint 列的測試按鈕 `startAutoSpinTest()` / `stopAutoSpinTest()`
+在 Cocos 專案裡根本不存在。兩邊專案的 `autoSpin()` **呼叫者皆為 0**。
+
+> **順帶修掉的一個真實症狀**：停止效果啟用時，autoSpin 的下一輪會踩到
+> `BaseReel.startRoll()` 的 `if (this._stopEffect.active) throw` —— 因為 `completeStoppedSpin()`
+> 接的是「滾動停」那一則信號，而該守衛要的是「停止效果播完」那一則。例外從上一輪的
+> `stopSpin()` promise 冒出來，`_spinning` 沒人收，機台只剩 `cleanup()` 能復原。
+> 這不是要修的 bug，是這個功能不該存在的病徵。
+
+**要做 manager 的時候再動工。** 屆時該長在遊戲流程層（對應 1016／1024 的 controller），
+框架這邊預期不需要任何新增 —— `startSpin(mode)` 已經是完整的單輪入口。
+
+#### 未定案：機台層缺「完全停」的出口
+
+**停止有兩則消息，這是設計，不是 bug。** Reel 層兩則都在，`BaseReel.onRollStopped` 的 JSDoc
+自己寫著「只代表 Reel 停止移動；停止效果完成是另一個事件」：
+
+| 消息 | 發出點 | 意義 |
+|---|---|---|
+| `onStopEffectStarted` | `BaseReel.completeStop()` | 停止效果開始 |
+| `onRollStopped(mode)` | `BaseReel.completeStop()`，緊接前者 | **資料到定位、效果還沒推開** |
+| `onStopEffectCompleted` | `BaseReel.updateMovement()` 內 | **完全停** |
+
+第二則的語意在程式碼上是精確的：`ReelAxisEffect.start()` 先 `reset()`（值設 0）再排 `moveTo`，
+當下還沒 `update()` 過，所以 `syncVisualEffectOffset()` 套上去的偏移就是 0 —— 畫面確實停在對齊位置。
+
+進場側則是**時間上的鏡像**，不是兩則並行的消息：`onStartEffectCompleted` 與
+`beginFirstCellMovement()`（內含 `onRollStarted`）是同一刻前後兩行。
+
+```
+進場：  啟動效果播完  →  才開始滾
+離場：  滾動先停     →  才播停止效果
+```
+
+**缺口**：`BaseSlotMachine` 整個檔案零次提到 `stopEffect`。機台層的
+`onReelStopped` / `onAllReelsStopped` / `stopSpin()` 的 promise 全部經
+`waitOneReelStopped()` → `BaseReel.waitForStoppedAsync()`，也就是**只轉出第一則**。
+
+**1016 證明了第二則非轉出來不可，而且它是手工轉了四層**：
+
+```
+UniReel1016.onStopRoll()            把 bounce 包成 _endBouncePromise（註解 //--20251022新增）
+  → UniReel1016.getEndBouncePromise()
+    → UniReelView1016.getEndBouncePromise(reelIndex)
+      → UniSlotMachine1016.getEndBouncePromise(reelIndex)      ← 機台層
+        → GameViewManager1016.oneReelRollEndCallBackFromSlot()  收進 _waitReelBounceTask
+```
+
+兩個消費端都在「不等 bounce 播完就不能開始」的位置：
+
+- `GameViewManager1016.beforeAllReelRollEnd()` —— wild 位移表演前
+  `await Promise.allSettled(this._waitReelBounceTask.values())`
+- `UniReelView1016.checkShowReadyHandFromEnd()` —— 秀下一軸聽牌特效前 `await bouncePromise`
+
+而**操作**（`setIconDataAfterRollEnd()` / `writeContinueWildData()` / `regiestMultipleReelData()`）
+一律掛在第一則。**兩則都要，缺一不可。**
+
+**未定的是形狀**，不是要不要做：新增一則機台層 callback（`onAllStopEffectsCompleted` 之類）、
+還是給 `BaseReel` 一個對應 `waitForStoppedAsync()` 的 `waitForStopEffectAsync()`。
+兩點已確認可以不用擔心：
+
+1. **沒有 race。** `_stopEffect.start()` 在 `completeStop()` 裡是同步跑在 `onRollStopped` 之前的，
+   所以機台收到第一則的當下，`stopEffectActive` 要嘛已是 `true`、要嘛這輪本來就不播
+   （效果關閉、或 Immediate 模式 —— `completeStop()` 只在 `ResultAligned` 才起效果）。
+2. **現有的 `onAllReelsStopped` 不可以挪去第二則。** 那是遊戲層實際拿來做操作的那一則
+   （1016 逐行印證），搬走會靜默改掉所有遊戲層的時序。要的是**新增**，不是搬。
+
+#### 決議 42：聽牌時間在規劃時算定；快速模式與急停不排聽牌時間，表演照發（已實作）
+
+##### 現況：`speedMultiplier` 把 `duration` 一起除掉
+
+聽牌分兩段：
+
+| 階段 | 位置 | 做什麼 | 效果 |
+|---|---|---|---|
+| 規劃 | `stopSpin()` → `createCurrentStopTimings()` | 聽牌軸目標 = 前一軸**規劃**停輪 + `duration`，寫進 `setActiveTargetStopTime()`，再 `commitResult()` | **有效** |
+| 執行 | `runListenSequence()` → `runOneListenReel()` | 等前一軸停下，再 `setActiveTargetStopTime(elapsed + duration)` 與 `setActiveMoveInterval(mi / m)` | 前者**失效**、後者**生效** |
+
+`ReelStopFlow._targetStopTime` 只在 `tryCommitResultAtHandoff()` 被讀一次 —— 結果寫進佇列的那個
+Cell 邊界就把時間換算成表演格，之後沒人再讀。前一軸停下時聽牌軸早已過了那個邊界，所以改目標
+無效；改速度卻在下一格生效 —— **格數不變、每格變快，聽牌時長縮成 `duration / m`**。
+`m < 1` 則反過來晚停。Cocos 完成版一模一樣。
+
+> `setActiveTargetStopTime()` 在 `stopSpin()` 那個呼叫點是正確用法（`commitResult()` 之前）。
+> 失效的只有 `runOneListenReel()` 裡那一個。聽牌參數在下達停止前就全部已知，**不需要執行中改目標**，
+> 那一行直接刪除。
+
+##### 1016 的做法
+
+- **誰聽牌**：遊戲層由 server 資料 `getReadyToHandForThisRound()` 取得軸清單，
+  `UniSlotMachine1016.multiSetReadyHand()` 逐軸標記。
+- **時間**：`UniReelView1016.setReelData()` → `calculateRandomDataLength()`，在提交結果的當下把
+  「軸間距 + 前面聽牌軸 × `forecast.eachReel` + 自身 `eachReel`」換算成假資料格數
+  （`ceil(totalTime / moveInterval)`），`eachReel` 三個速度等級都是 2 秒。
+- **速度從不改變**：`moveInterval` 只在 `UniReel1016.reset()` 與手動急停
+  （`manualStopClickProcess()` → `superMoveInterval`）被改。1016 沒有聽牌加速的需求 ——
+  **這不代表框架不需要**，`speedMultiplier` 保留。
+- **表演**：`oneReelRollEnd()` → `checkShowReadyHandFromEnd()`，**等本軸 bounce 播完**
+  （`getEndBouncePromise()`）才對下一軸 `showReadyHand`。
+
+##### 1016：速度模式高於普通（Lv1／Lv2）時，聽牌的表演與時間都不啟動
+
+逐段確認如下：
+
+1. **Lv1／Lv2 都算快速模式。** `MainUI.isTurboOn()` = `isFlashOn || newFlashMode !== NewFlashModeEnum.None`；
+   `GameViewManager1016` 每次開轉以它設 `_currentTurboSpeed` → `startRoll()` 的 `_isTurboMode`；
+   v3 `UniSlotMachine.isFastMode()` = `_isStopClick || _isTurboMode`。
+2. **表演三個入口全擋**：
+   `UniReelView1016.checkShowReadyHandFromEnd()`（`isFastModeCallback()` 時關掉所有預報動畫後 return）、
+   `UniReelView1016.onStartRollReadyHand()`（`TurboMode !== None` 就 return）、
+   v3 `UniReelView.checkShowReadyHand()`（`!isFastModeCallback()` 才顯示；1016 另覆寫成空函式）。
+3. **時間被砍掉**：`calculateRandomDataLength()` 本身**不看** Turbo，照樣塞 2 秒假資料；但
+   `UniReelView1016.stopRoll()` 在快速模式下立刻呼叫 `fastStopRoll()`。`UniReel1016.setData()`
+   把假資料排在佇列最前端（`resultData` 倒序 enqueue），`UniReel1016.fastStopRoll()` 從前端
+   dequeue 到只剩 `_iconAmount + 1 + _endCardCount`（盤面 + 上方預備 + 補牌）—— 聽牌假資料全數砍除。
+4. **普通模式下手動急停也一樣取消聽牌**：`stopRollCallBack()` → `manualStopClickProcess()` 砍假資料並改用
+   `superMoveInterval`；`_isStopClick = true` 之後各軸停下時 `checkShowReadyHandFromEnd()` 走快速模式分支。
+
+> 唯一沒擋的是 `beforeStopSpin()` 仍會呼叫 `multiSetReadyHand()`（只看 NORMAL 狀態），各軸的聽牌旗標
+> 照樣設上 —— 但表演與時間都被上面幾條路擋掉，沒有實際作用。
+
+##### 決議
+
+1. **聽牌時間在規劃時算定。** `createCurrentStopTimings()` 已知前一軸的規劃停輪 `Ls`、`duration`
+   與 `speedMultiplier`，寫給 Reel 的目標換算成「原速下需要的時間」：
+
+   ```text
+   kb     = floor(Ls / mi)                      切速的 Cell 邊界（不晚於 Ls 的最後一個）
+   目標   = kb·mi + (Ls + duration − kb·mi) × m
+   ```
+
+   Reel 照原本流程在提交時換算格數，並在**第 kb 格邊界自己切換速度**（`mi → mi / m`）。
+   切換點在規劃時定下，**不靠**前一軸停下的事件。
+2. **`fastMode` 或急停時，框架不排聽牌時間**：不換算目標、不切速度，聽牌軸照普通軸處理。
+3. **`onListenStart` / `onListenEnd` 照發**，要不要播聽牌表演由遊戲層決定（1016 也是在表演層自己擋）。
+4. **`runOneListenReel()` 的 `setActiveTargetStopTime()` 刪除**；它只剩「等前一軸停下 → 發回調 →
+   等本軸停下 → 發回調」。
+
+> **框架看不到「速度等級」，靠 `fastMode` 對應（已確認）。** `SpinMode` 是遊戲自訂字串，框架只認得
+> `SlotMachineSpinConfig.fastMode` 與 `quickStop()`。**Lv1／Lv2 對應的 SpinConfig 一律設成
+> `fastMode: true`**，由遊戲層在每次開轉時以 `startSpin(mode)` 送入 —— 框架不需要新增入口。
+>
+> 1016 的對應物分兩段：
+>
+> - **切換按鈕時**：`GameController016.onNewFlashBtnSwitch(mode)` → `GameViewManager1016.setTwoLevelTurboMode()`
+>   寫入全域 `TurboMode`，並經 `_flashToSpeedMap` 切換 `DelayTimeList.currentTimeMode`
+>   （決定用 `regular` / `fast_L1` / `fast_L2` 哪一組時間）
+> - **每次開轉前**：`GameViewManager1016.reSetDataForBeforeSpin()` 讀 `GenericUIManager.isTurboOn`
+>   （Lv1／Lv2 皆為 true）存成 `_currentTurboSpeed`，`doStartSpin()` 再傳進 `startRoll()`
+>
+> 我們的 `startSpin(mode)` 等於把這兩段合成一個呼叫：`mode` 同時選定時間組與 `fastMode`。
+
+##### 驗算（2,880 組／變體，框架未改，外部 monkeypatch）
+
+參數：`m` 0.5／1／1.5／2／3 × `duration` 0.3／0.6／1／2 × `mi` 0.016／0.05／0.08 × 可視 3／5
+（平盤面與含截斷的大 Symbol 盤面）× 聽牌軸 `[1]`／`[2]`／`[4]`／`[2,3]`／`[2,3,4]`／`[1,3]` ×
+軸間距 `2·mi` 與 0.1（非整數倍，讓相位錯開）。比較三種：現況、`event`（前一軸實際停下才切速）、
+`planned`（本決議）。
+
+| | 現況 | event | **planned** |
+|---|---|---|---|
+| 聽牌誤差（秒） | −2.80 ～ **+1.98** | −0.18 ～ +0.067 | **−0.17 ～ +0.013** |
+| 連續時間的真晚停 | 大量 | **148** | **0** |
+| 停輪順序違反 | 328 | 44 | **0** |
+| 盤面錯誤 | 0 | 0 | 0 |
+| 切換點 − `Ls`（格） | — | −2.5 ～ **+2.75** | −0.75 ～ 0 |
+
+- `event` 的切換點取決於前一軸**實際**停下的時刻，會落在 `Ls` 之後；連續聽牌時誤差逐軸疊加。
+- `planned` 的 +0.013 秒只出在**觀測**：以連續時間計反而早 0.004 秒，只是停輪落在幀中間、
+  下一幀才被看到（不到 1/60 秒）。最早的一端約為「一格聽牌速度 + 一幀」（`m = 0.5` 時一格 0.16 秒）。
+- `m = 1` 時三者完全相同 —— 本決議對不加速的聽牌零影響。
+
+> **量測基準要用 `elapsedRollTime`。** 它在每幀開頭就吃掉整幀 deltaTime，而 Cell 邊界多半落在幀中間，
+> 所以提交時的 elapsed 最多領先真實邊界一幀。若改用「逐格累加」量停輪，會與框架基準差出整整一格，
+> 看起來像每一軸都早停一格 —— 那是量錯，不是框架的問題。
+
+驗算腳本在 scratchpad（`listen.js` / `sweep.js`），**session 結束會消失**，需要時照本節重建。
+
+##### 聽牌回調：有設定聽牌的軸一律成對發出（已實作）
+
+**缺陷**：`runOneListenReel()` 等前一軸（停止順序）停下後，若聽牌軸已不是 Rolling／Stopping 就直接 return，
+`onListenStart` / `onListenEnd` **兩個都不發**。前一軸在第 N 幀的 `update()` 裡停下，但 `await` 之後的續行要等
+同一幀所有軸都推進完才跑 —— 聽牌軸若同幀停下（或更早），續行時它已是 Stopped。
+
+| 情境（每組 1,920 個聽牌軸，修正前） | 發出 |
+|---|---|
+| `fastMode` 急停（Turbo 同步，全軸同幀） | **0** |
+| `fastMode` 不急停，決議 42 實作後（不排聽牌時間 → 全軸同幀） | **0** |
+| 普通模式急停（先按／下達後 0.05 秒） | 840／856（約 44%） |
+| 普通模式不急停 | 全部 |
+
+這讓第 3 條「回調照發，由遊戲層決定」做不到 —— 1016 是表演層收到後自己擋（`isFastModeCallback()`），前提是**收得到**。
+
+**修正**：有設定聽牌的軸一律依序發出 `onListenStart` → `onListenEnd`：
+
+- 聽牌軸仍在轉：照原流程（切速、發開始、等本軸停、發結束）
+- 聽牌軸已停：**不碰速度**（對已停的軸 `setActive*` 會丟例外），直接依序發開始與結束
+- `cleanup()` 或 `immediateStop()` 中止整輪時維持不發（`!_inited || !_spinning` 守衛保留）
+
+驗證：同一組情境修正後全部 1920／1920 成對發出、盤面零錯。斷言 §11o（12 項：普通不急停對照、普通先按急停、`fastMode` 兩個進入順序；
+每組檢查「各發一次、開始在結束之前、照停止順序」）。**還原成「已停就 return」時紅 6 項**（三個急停情境各 2 項，對照組照常通過）。
+
+##### 聽牌途中急停：依照當下速度（已實作）
+
+**規則：按下急停那一刻的速度是多少，就用多少走完，之後不再改速度。**
+
+| 按下時 | 行為 |
+|---|---|
+| 已切到聽牌速度 | 維持聽牌速度 |
+| 尚未切速 | 維持原速，**取消**預定的第 kb 格切速 |
+
+- 與既有急停的設計一致：`BaseReel.requestQuickStop()` 本來就「不修改速度、duration、easing 或 timeScale」，只砍表演格。
+- 實作點只有一個：Reel 收到急停時，清掉尚未發生的預定切速；已切過的不必處理。
+- **這也是決議 43 正確的前提**：依序補格以「當下的 `moveInterval`」推算剩餘秒數，急停後若還會切速，推算就錯、補格就錯。
+- Turbo 不受影響：`fastMode` 不排聽牌時間，也就不會切速。
+
+驗算數據（決議 43 之前量的，按下到停輪要走幾格，以原速格數計；對照普通軸最多 10.42 格）：
+
+| 按下時 | 最多 |
+|---|---|
+| 尚未切速 | 10.42（與普通軸相同） |
+| 已切速，`m = 1.5`／`2`／`3` | 7.29／5.21／4.17 |
+| 已切速，`m = 0.5` | 19.79（約兩倍）→ 由下一條限制排除 |
+
+> **現況違反本規則**：目前 `runOneListenReel()` 在前一軸停下時**一定**呼叫 `setActiveMoveInterval()` 加速，
+> 急停之後照切。實作決議 42 時一併修正；屆時把「聽牌 + 急停 + 決議 43 依序補格」重新驗算並補斷言。
+
+##### `speedMultiplier` 限制 `>= 1`（已實作）
+
+**框架不支援聽牌減速。** `speedMultiplier < 1` 時，依上一條規則，聽牌已進入減速後玩家急停，那一軸仍以慢速走完，
+比其他軸晚將近一倍 —— 規則本身正確，但這個設定值本身沒有用例（`ListenReelConfig` 的 JSDoc 只寫「1 維持原速，大於 1 加速」）。
+
+- `setListenReels()` 驗證 `speedMultiplier` 為有限數且 `>= 1`，否則丟例外（現在完全不驗，填 0 要到轉輪途中才在 `setActiveMoveInterval()` 丟）
+- `ListenReelConfig.speedMultiplier` 的 JSDoc 補上「必須 `>= 1`」
+
+##### 實作（已完成）
+
+| 位置 | 內容 |
+|---|---|
+| `BaseReel.planListenSpeedUp(listenStart, listenStop, m)` | 在「不晚於聽牌開始的最後一個 Cell 邊界」排切速；目標換成 `b + (listenStop − b) × m`。切速點用本軸自己的格邊界推算（當前這格剩餘時間，或啟動效果剩餘 + 一格），不假設從 0 起每格一個 `mi`。必須在 `commitResult()` 之前呼叫 |
+| `BaseReel._completedCellCount` / `applyScheduledSpeedChange()` | 每個完整 Cell 邊界計數，走到預定格就換 `_moveInterval`（在 `onCellMovementComplete` 之後、排下一格之前） |
+| `BaseReel.cancelScheduledSpeedChange()` | `requestQuickStop()` / `requestImmediateStop()` 取消**尚未發生**的切速（依照當下速度） |
+| `ReelStopFlow.rescaleStopPlanAfter()` | 提交時把 `lastStopPlan.actualStopTime` 切速點之後那段縮回真實時間；取消切速時放回 |
+| `ReelAxisEffect.remainingDuration` | 啟動效果剩餘秒數（推算第一格邊界用） |
+| `BaseSlotMachine.stopSpin()` | `fastMode` 或急停已要求時不排聽牌時間；否則對聽牌軸呼叫 `planListenSpeedUp(target − duration, target, m)` |
+| `BaseSlotMachine.createCurrentStopTimings(timings, planListen)` | `planListen` 為 false 時聽牌軸照普通軸規劃 |
+| `BaseSlotMachine.runOneListenReel()` | 只剩通知；`setActiveTargetStopTime()` 與事件觸發的 `setActiveMoveInterval()` 刪除 |
+| `BaseSlotMachine.setListenReels()` | `reelIndex` 範圍、`duration >= 0`、`speedMultiplier` 有限且 `>= 1` |
+
+> **沒有**把 `moveInterval` 拆成「基準」與「本格時間」兩個欄位 —— 預定切速直接換掉 `_moveInterval`，
+> 決議 42 只需要這樣。§3.7「量化誤差壓到 0」實作時仍要拆（它每格都要改本格時間）。
+
+**驗算**（框架實作本身，外部只量測）：
+
+| 情境 | 結果 |
+|---|---|
+| 普通模式不急停（2,304 組，`m` 1／1.5／2／3） | 與外部模擬的 `planned` 數字相同；連續時間晚停 0、停輪順序違反 0、盤面錯 0 |
+| `fastMode` 不急停／急停（各 1,152 組） | 與不設聽牌逐軸相同，同步離散 0（修正前最多 7.85 秒） |
+| 普通模式急停（先按／下達後 0.05） | 與不設聽牌逐軸相同，順序違反 0 |
+| 普通模式聽牌途中急停（1.3／2.0 秒） | 順序違反 0（與決議 43 依序補牌相容） |
+| 回調 | 全部 1920／1920 成對 |
+| 聽牌途中急停，按下到停輪（格） | 未切速 ≤ 10.42（同普通軸）；已切速 `m` 1.5／2／3 ≤ 7.29／5.21／4.17 |
+
+斷言 §11p（17 項）：`m` 1／2／3 的聽牌時長與順序、`lastStopPlan` 換算、`fastMode` 與不設聽牌逐軸相同、
+切速前／後急停的速度、`setListenReels()` 四項守門。**分別還原**：目標不換算（舊 bug）紅 2、急停不取消切速紅 1、
+`fastMode` 照排聽牌紅 1、拿掉 `speedMultiplier` 有限數檢查紅 1。
+
+> 「切速前急停」那組必須按在切速邊界前一刻（2.05 秒，邊界 2.16）。第一版按在 1.0 秒，砍完表演格後
+> 這一軸走不到切速格就停了，還原「取消切速」時不會紅 —— 等於沒測到，已改正。
+
+**未驗過**：第一軸就聽牌（沒有「前一軸」；目前聽牌窗取「停輪前 duration 秒」）、即停。
+
+#### 決議 43：普通模式急停補「剛好足以依序停止」的表演格（已實作）
+
+##### 現象：錯開啟動 + 急停 → 停輪順序亂掉
+
+普通模式急停只把各軸結果前的表演格砍光（`BaseReel.applyQuickStopDataSkip()`），之後每軸在
+**自己的**第一個可停 Cell 邊界停下。錯開啟動（`startDelaySeconds > 0`）讓各軸相位不同，於是後面的軸
+可能比前面的早停：
+
+```text
+mi 0.016／錯開 0.1 秒／急停
+onReelStopped：0@0.85 → 4@0.85 → 1@0.867 → 2@0.867 → 3@0.867
+```
+
+機台層對此**完全沒有處理**：`onReelStopped` 照實際停輪順序發（同一幀內照 `update()` 走訪的軸號），
+各軸 bounce 也亂序開始，`onAllReelsStopped` 在最後一軸停下時發。
+
+- **Cocos 完成版一樣**（node 下以 `cc` 替身實跑同一組情境，錯開啟動時 68／96 組錯亂；Egret 42／96）。
+  兩邊急停路徑一致，都沒有任何維持順序的邏輯，是範本繼承來的行為，不是移植造成的。
+- **不錯開啟動就不會發生**：兩邊都 0／48，全部同幀停下。
+- **1016 為什麼沒有**：三個速度等級的 `staggerRoll` 都是 0（停輪的先後是靠多塞假資料做出來的，
+  急停把假資料砍掉之後大家就一起停）。
+
+> **急停只會發生在資料到了之後。** 1016 的停止按鈕從開轉就啟用（`clickStartSpinProcess()`；
+> `onStopBtnClickHandler()` 註解「現在stop按鈕都要常駐狀態」），但資料未到時按下只記
+> `_interruptFlag`，等 `canStopRoll()` 確認資料到了才 `manualStopClickProcess()`。
+> 對應到框架就是「急停不早於 `stopSpin()`」或「`quickStop()` 先記旗標、`stopSpin()` 時才生效」——
+> 兩者都在下面的兩個呼叫點內。
+
+##### 決議
+
+原本的設計是「砍掉表演格、直接進場顯示結果」，**沒有**要求依設定間隔到達；這點不變。
+只加一件事：**砍完之後，依停輪順序逐軸補上剛好足以「不早於前一軸」的表演格。**
+
+與 Turbo 同步補牌（`prepareFastQuickStopPadding()`）是同一套機制，**補的數量不同**：
+
+| | Turbo（`fastMode`） | 普通模式（本決議） |
+|---|---|---|
+| 目標 | 全軸**同時**停 | **盡快、依序**停 |
+| 補到哪 | 每軸補到最長那軸 | 每軸只補到不早於**前一軸** |
+| 比較單位 | half-Cell（相位相同） | 秒（錯開啟動相位不同） |
+
+```text
+依停輪順序逐軸：
+  T_i = 當前這格剩下的時間（movement.remainingDuration）+（剩下的交接次數 − 1）× mi_i
+  若 T_i < T_prev：補 n = ceil((T_prev − T_i) / mi_i) 格，T_i += n × mi_i
+  T_prev = max(T_prev, T_i)
+```
+
+「剩下的交接次數」依狀態有三種算法：
+
+| 狀態 | 剩下的交接次數 |
+|---|---|
+| 結果未提交 | 與 Turbo 相同（`calculateQuickStopHalfCellCount()` 的行程） |
+| 已提交、結果尚無格子進場 | 結果本體結尾索引 + `firstVisibleIndex` − `readIndex` |
+| 結果已有格子進場 | `(firstVisibleIndex + visibleCellCount − 1) − p`，`p` = strip 上最深的本輪結果格 − 退場端墊格數 |
+
+- **只對結果第一格還沒進場的軸補格。** 已進場再插格會把結果切成兩段、永遠對不齊（第一版驗算 9 組逾時就是這個）。
+  這些軸本來就沒有表演格可砍，照原計畫依序停。
+- **呼叫點與 Turbo 相同的兩個**：`quickStop()`（結果先到、玩家後按）與 `stopSpin()`（玩家先按、結果後到）。
+  依 `fastMode` 二選一，Turbo 不受影響。
+- **「依序」定義為不早於前一軸**；同一幀停下算合格，回調照軸號發。
+
+##### 推算為什麼不能用 `lastStopPlan`
+
+1. **`lastStopPlan.actualStopTime` 只精準到一幀。** 它以 `elapsedRollTime` 計，而提交發生在幀中間的
+   Cell 邊界、elapsed 卻已吃掉整幀 —— 各軸領先真實邊界的量不同（0～1 幀）。兩軸真實只差不到一幀時分不出先後，
+   驗算中 23 組因此差一幀反轉。改成直接數交接次數（連續時間）後歸零。
+2. **資料列表讀完之後 `readIndex` 不再前進**：`ReelDataFlow.consumeNextData()` 在結果已提交且列表為空時
+   直接回傳 `undefined`。所以結果進場後改看 strip 位置。退場端墊格在停輪前都還在退場 buffer 裡
+   （buffer = `maxSpan` ≥ 墊格數），找得到。
+
+##### 驗算（288 組，框架未改，外部 monkeypatch）
+
+參數：`mi` 0.016／0.05／0.08 × 可視 3／5（完整與含截斷盤面）× 錯開啟動 0／`2·mi`／0.1／0.25 ×
+急停時機「先按、結果後到」與下達停止後 0.05／0.3／0.6／1.0／1.3 秒。
+
+| | 現況 | 本決議 |
+|---|---|---|
+| 停輪順序違反 | **145** | **0** |
+| 盤面錯誤 | 0 | 0 |
+| 推算 vs 觀測（觀測 − 推算） | — | 0.0007 ～ 0.0167 秒（< 1 幀，無一早於推算） |
+| 每軸補格 | — | 1～3 格，中位數 1 |
+| 補格軸與前一軸間距 | — | 0 ～ 1 格（盡快） |
+| 最後一軸比現況晚停 | — | 0 ～ 0.167 秒，中位數 0 |
+
+「現況」一欄即拿掉補格的對照組，還原修正會紅。驗算腳本在 scratchpad（`order3.js`；Cocos 對照為
+`order.js` / `order2.js` 與 `cocos/` 替身），**session 結束會消失**，需要時照本節重建。
+
+##### 實作
+
+| 位置 | 內容 |
+|---|---|
+| `BaseSlotMachine.prepareQuickStopPadding()` | 兩個呼叫點（`stopSpin()`、`quickStop()`）的共用入口，依 `fastMode` 二選一 |
+| `BaseSlotMachine.prepareOrderedQuickStopPadding()` | 本決議的逐軸推算與補格；與 `prepareFastQuickStopPadding()` 並列 |
+| `BaseReel.calculateQuickStopRemainingSeconds()` | 急停後剩餘秒數（連續時間） |
+| `BaseReel.countHandoffsUntilStop()`（private） | 三種狀態的交接次數；結果未進場時直接沿用 `calculateQuickStopHalfCellCount()` 的行程 |
+| `BaseReel.canApplyQuickStopPadding` | 結果第一格已進場就回 `false` |
+| `ReelDataFlow.resultExitPadCellCount` / `canInsertBeforeResult` | 上面兩者所需的唯讀查詢 |
+
+斷言 `tests/CoreGeometry.test.ts` §11k（11 項，兩個進入順序各一組）。**還原修正時兩個順序都紅**：
+停輪時刻反轉，`onReelStopped` 變成 `[2,3,4,0,1]`（玩家先按）與 `[0,2,3,4,1]`（結果先到）。
+
+> 「至少一軸被補了格」在「結果先到」那組還原後仍通過 —— 有一軸本來就留著沒被砍的表演格。
+> 真正守住行為的是「停輪時刻不遞減」與「`onReelStopped` 依軸序」兩項。
+
+**假設**：剩下的格子都用目前的 `moveInterval`。聽牌切速（決議 42）實作時要把切速納入剩餘秒數的推算。
+
+##### 自訂停止順序下又抓到的兩個缺陷（已修）
+
+**停止順序 = `SlotMachineSpinConfig.reelTimings` 的陣列順序**，與 `reelIndex` 無關（右到左、由中往外都行）。
+上面的驗算與 §11k 全用左到右，軸號順序剛好等於設定順序，兩個缺陷都藏住了：
+
+| 缺陷 | 成因 | 修法 |
+|---|---|---|
+| 同一幀停下的軸，`onReelStopped` 照**軸號**發（`[4,3,2,1,0]` 發成 `[4,2,3,0,1]`） | `update()` 照 `_runtimeReels` 走訪；同幀內 `completeStop()` 與停止 promise resolve 的先後就是走訪順序 | 新增 `_updateOrder`：`startSpin()` 時由 `createUpdateOrder()` 建立，本輪作用軸照停止順序在前、其餘照軸號接後 |
+| 急停在 `stopSpin()` 等待後面的軸啟動期間時，停輪時刻反轉 | `quickStop()` 與 `stopSpin()` 各補一次；第二次判定「不用補」的軸沒被寫，**留著第一次的預算**，實際多走一格跑到下一軸後面 | 能補的軸一律 `applyQuickStopPadding()`，**0 也寫**（未提交時是覆寫預算；Turbo 版本來就每軸都寫） |
+
+> 第二條原本以為是「還沒啟動的軸被略過」—— 讀程式碼推論是對的方向，但掛紀錄實測後發現
+> `stopSpin()` 等所有軸啟動完會再補一次，那時第 0 軸已在轉；真正的原因是第 1 軸的舊預算。
+
+驗算：三種順序（`[0..4]` / `[4..0]` / `[2,1,3,0,4]`）× 原 288 組參數，各 276 組有效：
+停輪時刻反轉 0、`onReelStopped` 未照設定 0、盤面錯 0。
+
+斷言 §11l（10 項）：右到左的不急停對照、同幀停下（前提檢查：五軸真的同幀）、急停在等待啟動期間
+（前提檢查：最後一軸還沒啟動）。**兩個修正分別還原時各自紅 2 項**。
+
+> 仍然成立的限制：**啟動順序與停止順序是同一個陣列**，不能分開設定（`createCurrentStopTimings()`
+> 讓停輪時刻沿陣列順序只增不減）→ 由決議 44 解除。
+
+#### 決議 44：啟動順序與停止順序分開設定（已實作）
+
+**需求**：同時啟動、依序停止（例如同時啟動、右到左停）。原本 `reelTimings` 一個陣列同時決定啟動與停止順序，
+`createCurrentStopTimings()` 又讓停輪時刻沿陣列順序只增不減，所以兩者綁死。
+
+**形狀**：`SlotMachineSpinConfig` 新增選填的 `stopTimings`，與 `startDelaySeconds` 對稱的逐軸間隔（類似 1016 的 `staggerStop`）：
+
+```ts
+registerSpinConfig("normal", {
+    fastMode: false,
+    reelTimings: [                 // 啟動：同時
+        { reelIndex: 0, startDelaySeconds: 0, targetStopSeconds: 1.4, moveIntervalSeconds: 0.08 },
+        { reelIndex: 1, startDelaySeconds: 0, targetStopSeconds: 1.4, moveIntervalSeconds: 0.08 },
+        { reelIndex: 2, startDelaySeconds: 0, targetStopSeconds: 1.4, moveIntervalSeconds: 0.08 },
+    ],
+    stopTimings: [                 // 停止：右到左，每軸間隔 0.2
+        { reelIndex: 2, stopDelaySeconds: 0 },
+        { reelIndex: 1, stopDelaySeconds: 0.2 },
+        { reelIndex: 0, stopDelaySeconds: 0.2 },
+    ],
+});
+```
+
+**語意**：
+
+| | 未填 `stopTimings` | 有填 |
+|---|---|---|
+| 停止順序 | `reelTimings` 的陣列順序（與現在相同） | `stopTimings` 的陣列順序 |
+| 停輪時刻 | 各軸 `實際啟動時刻 + targetStopSeconds`，沿順序只增不減 | 第一軸 = `實際啟動時刻 + targetStopSeconds`；之後 = 前一軸 + `stopDelaySeconds` |
+| 不使用的欄位 | — | 第一軸以外的 `targetStopSeconds`；第一軸的 `stopDelaySeconds` |
+
+- **實際啟動時刻**與 `createPendingStarts()` 同一套：`fastMode` 全為 0，否則累加 `startDelaySeconds`。
+- **鎖軸**：未作用的軸從兩個序列都移除，它的間隔一起消失（與 `startDelaySeconds` 相同）；停止序列的第一個作用軸用自己的 `targetStopSeconds`。
+- **驗證**：`stopTimings` 的 `reelIndex` 必須與 `reelTimings` 一對一（不多、不少、不重複），`stopDelaySeconds` 為非負有限數。
+- **物理下限**：要求早於下限時從最早能停起算，之後的軸照間隔接上（決議 47 之後；以前是各軸各自被鉗到 earliest）。
+- **`fastMode`**：`stopDelaySeconds` 一律當 0，只保留順序（決議 48）。
+
+**改用停止順序的地方**：`createCurrentStopTimings()`（含聽牌的「前一軸」）、`prepareOrderedQuickStopPadding()`（決議 43）、
+`createUpdateOrder()`（同幀回調順序）。Turbo 同步（全軸同時停）、`quickStop()` / `immediateStop()` 的逐軸轉發與順序無關，不動。
+
+##### 實作（已完成）
+
+| 位置 | 內容 |
+|---|---|
+| `SlotMachineReelStopTiming` / `SlotMachineSpinConfig.stopTimings` | 新型別與選填欄位 |
+| `BaseSlotMachine.getStopOrder()` | 本輪作用軸的停止順序；未設 `stopTimings` 時回傳啟動順序 |
+| `BaseSlotMachine.createStartAtByReel()` | 實際啟動時刻，規則與 `createPendingStarts()` 相同 |
+| `BaseSlotMachine.createBaseStopTimes()` | 基準停輪時刻（兩種語意） |
+| `BaseSlotMachine.createCurrentStopTimings()` | 改沿停止順序走；回傳陣列依停止順序 |
+| `BaseSlotMachine.validateStopTimings()` | 一對一、不重複、`stopDelaySeconds` 非負有限 |
+| `prepareOrderedQuickStopPadding()` / `createUpdateOrder()` | 改走 `getStopOrder()` |
+
+> `createCurrentStopTimings()` 的啟動時刻原本一律累加 `startDelaySeconds`，`fastMode` 也不例外；現在改用實際啟動時刻
+> （`fastMode` 全為 0）。未設 `stopTimings` 且不聽牌時兩者算出的相對目標相同（原 196 項與三種順序各 276 組驗算零差異）。
+
+**驗算**：啟動左到右（同時、`2·mi`、0.1 秒）× 停止順序 右到左／由中往外／左到右 × `stopDelaySeconds` 0／`2·mi`／0.2／0.25
+× 急停 不按／先按／0.05／0.6 × `mi` 3 種 × 平盤面與截斷盤面，每種順序 288 組：
+
+| | 結果 |
+|---|---|
+| 盤面錯 | 0 |
+| 第一軸 − `targetStopSeconds` | −0.83 ～ 0 格（不晚、最多早一格） |
+| 軸間隔 − `stopDelaySeconds` | 中位數 0；`mi ≥ 0.05` 時在一格以內（`mi = 0.016` 時一幀就超過一格，是幀量化） |
+| 急停的組 | 停輪反轉 0、回調未照停止順序 0 |
+| 不急停的組 | **`stopDelaySeconds = 0` 且錯開啟動時反轉**（每種順序 6～8 組），其餘 0 |
+
+斷言 §11m（12 項：同時啟動、不急停的順序／第一軸／間隔／盤面、急停、鎖軸）與 §11n（4 項守門）。
+**還原**：只讓 `getStopOrder()` 回傳啟動順序時紅 5 項；快照丟掉 `stopTimings` 時紅 9 項。
+
+##### 已定案（選 ③）：規劃間隔小於一格時，不急停也會反轉
+
+上表最後一列的成因與 `stopTimings` 無關，是既有的量化行為：各軸停輪時刻各自量化到自己的 Cell 邊界（`(−1 格, 0]`），
+錯開啟動讓相位不同，所以**規劃間隔小於 `moveIntervalSeconds` 的相鄰兩軸**先後會在一格內隨機。未設 `stopTimings`、
+把目標設成同時停也一樣。回調順序也跟著反。
+
+實例（`mi` 0.08、錯開啟動 0.1、`stopTimings` 右到左、`stopDelaySeconds = 0`，規劃五軸同時停在 2.400）：
+
+```text
+停止順序   4       3       2       1       0
+實際     2.333   2.383   2.367   2.350   2.333    ← 第 2 軸比第 3 軸早停；onReelStopped 發成 4,0,1,2,3
+```
+
+可能的處理：① 維持現狀，文件寫明「間隔小於一格時不保證順序」；② 結果提交時也套用決議 43 的「不早於前一軸」補格
+（代價：要求同時停的軸會被拉成一格一格依序停）；③ 等 §3.7「量化誤差壓到 0」（軸間隔誤差 ±0.0003 秒），自然消失。
+
+**決議：選 ③。** 現階段不處理；§3.7 的量化誤差歸零實作後，規劃同時停的軸會真的同時停，此現象隨之消失。
+§3.7 排在聽牌（決議 42）之後，所以順序是 **決議 42 → §3.7 → 本項自動結清**；§3.7 實作時要把這個情境加進斷言。
+
+> 補記：只做自我修正時這個反轉仍有 20 組，要加上「實際原點」才歸零 —— 決議 45 已定案兩者一起做。
+>
+> **已結清**（決議 45 實作）：此情境五軸同一幀停下、回調照 `stopTimings`，斷言 §11q。
+> 實作時另抓到停輪時刻落在幀邊界時被浮點雜訊拆到兩幀，由 `BaseMovement.TIME_EPSILON` 處理（§3.7）。
+
+#### 決議 46：聽牌從前一軸**實際**停下起算（已實作）
+
+##### 現象：伺服器晚到時聽牌消失
+
+決議 42 把聽牌目標定成「前一軸的**規劃**停輪 + `duration`」。前一軸沒被鉗制時規劃 = 實際，看不出差別；
+一旦前一軸被鉗到 earliest（伺服器結果晚於停輪時間到），聽牌就被吃掉：
+
+```text
+每格 0.08、targetStopSeconds 0.15、錯開 0.1、伺服器 3 秒送達、第 2 軸（R1）聽牌 1.5 秒
+第 1 軸規劃停 0.15 → 聽牌軸目標 0.25 + 1.5 = 1.75，但結果 3 秒才到，1.75 早已過去
+
+          R0      R1      R2      聽牌長度
+不聽牌   3.450   3.467   3.483     —
+聽牌     3.450   3.467   3.483    0.017 秒     ← 設定 1.5 秒，實際幾乎為 0
+```
+
+##### 原版的意圖
+
+Cocos 完成版 `BaseSlotMachine.runOneListenReel()` 的註解：
+
+> duration 從 Callback 發生的這一刻起算，不是直接加在原始 targetStopTime 上；前一軸的實際停止誤差不會吃掉聽牌時間。
+
+意圖就是「前一軸實際停下 + duration」。原版在前一軸停下時才 `setActiveTargetStopTime()`，但那時結果早已提交、改了無效
+（決議 42 修的那個缺陷）；決議 42 改成規劃時算定，順手把起點換成規劃停輪 —— **這一步偏離了原意**，本決議改回來。
+
+##### 決議
+
+| 軸（停止順序） | 目標停輪 |
+|---|---|
+| 聽牌軸 | 前一軸**實際**停輪 + `duration` |
+| 聽牌軸之後的普通軸 | 前一軸**實際**停輪 + 原本的軸間距（與現在「保留原本軸間距」同一條規則，只換起點） |
+| 第一個聽牌軸之前的軸 | 不變 |
+| 第一軸就聽牌 | 不變（沒有前一軸） |
+
+前一軸沒被鉗制時，實際 = 規劃（決議 45 之後連續時間誤差 0），**結果與現在完全相同** —— §11p 不受影響。
+
+##### 做法：已由決議 47 取代
+
+最初的實作是**延後提交**：從第一個聽牌軸起，每軸等前一軸提交、停輪確定後才提交自己。行為正確，但每軸最多多等一格，
+5 軸一路累積 —— config 要求同時停（間隔 0）、資料又剛好在停輪時間前不久到時，最後一軸會被拖晚最多 0.32 秒
+（6,912 組中 1,558 組比決議 47 晚結束）。
+
+決議 47 改成**資料到達時直接推算**每軸停輪，延後提交的程式（`DeferredCommit`、`commitDeferredResults()` 等）已整段移除。
+本決議的**規則**（聽牌 = 前一軸實際停下 + `duration`）不變，§11r 的 13 項斷言照舊通過。
+
+#### 決議 47：資料到達時，沿停止順序直接推算每軸停輪（已實作）
+
+##### 現象：伺服器晚到時，軸間隔消失、停輪順序亂
+
+以前每軸的停輪時刻在**開轉時**就定了（`啟動時刻 + targetStopSeconds`），軸與軸的間隔藏在這幾個秒數裡。
+資料到了，每軸各自算「離該停還差幾格」補表演牌。伺服器晚於停輪時間到時，每軸都算出「差 0 格」，
+各自在自己最早能停的邊界停下 —— 間隔消失，錯開啟動讓相位不同，先後在一格內隨機。
+
+| 伺服器晚於停輪時間（48 組，5 軸） | 順序亂 |
+|---|---:|
+| Cocos 完成版（node 下以 `cc` 替身實跑） | 45 |
+| Egret（本決議前） | 36 |
+
+**根源**：Cocos 完成版把「最少轉多久」與「每軸間隔」合成同一個絕對秒數，並假設資料一定比停輪時間早到。
+
+##### 1016 怎麼做
+
+`UniReelView1016.calculateRandomDataLength()` 在資料到達時，對每軸塞 `ceil((第幾個停 × staggerStop + 聽牌時間) ÷ moveInterval)`
+格假資料 —— **相對**格數，不看現在幾秒；`canStopRoll()` 的最短滾動時間整段註解掉，只等資料；`staggerRoll` 三個等級都是 0。
+所以伺服器再晚，停輪都是「資料到 → 每軸間隔 `staggerStop` 依序停」（regular 0.2 秒，Lv1／Lv2 為 0）。
+
+##### 決議
+
+資料到達時（`stopSpin()`），沿**停止順序**逐軸推算，每軸取最晚的那個，立刻提交：
+
+```text
+普通軸 = max(config 規劃停輪, 前一軸停輪 + 原本軸間距, 本軸最早能停)
+聽牌軸 = max(前一軸停輪 + duration,                      本軸最早能停)
+```
+
+- **本軸最早能停**：`BaseReel.projectEarliestStopTime(result)` —— 下一個邊界 +（結果進場交接次數 − 1 + 退場端墊格）× `moveInterval`，
+  與提交時算 `directResultStopTime` 同一條式子
+- **前一軸停輪**是上一輪迴圈的推算值；每格修正（決議 45）讓各軸準時停在推算值上，所以它就是前一軸**實際**停下的時刻 ——
+  不必等前一軸提交（取代決議 46 的延後提交）
+- 資料早到、沒有軸被鉗制時，三者取出來就是 config 規劃值，**行為與以前完全相同**
+
+##### 連帶修正：啟動效果播完那一幀，時間被用了兩次
+
+啟動效果在某幀中途播完時，第一格被當成「從這一幀開頭起走」、吃整幀 deltaTime —— 效果用過的那段又被 Movement 用一次，
+第一格起點比效果結束早，早多少取決於幀長，事先推算不出來（資料在啟動效果中途送到時，推算最多差一幀）。
+
+改成：啟動效果本幀播完時，第一格只吃「效果結束之後」剩下的時間，起點就是效果結束的精確時刻（`BaseReel.updateMovement()`）。
+`updateMovement()` 開頭的註解本來就寫著「避免同一份 deltaTime 被用兩次」，停止效果有處理、啟動效果沒有。
+
+##### 實作
+
+| 位置 | 內容 |
+|---|---|
+| `BaseSlotMachine.createCurrentStopTimings()` | 改成上面的推算；聽牌軸同樣從推算的前一軸停輪起算 |
+| `BaseSlotMachine.projectEarliestStopTime(reelIndex)` | 取本輪結果交給 `BaseReel.projectEarliestStopTime()`；軸不在轉時不限制 |
+| `BaseReel.projectEarliestStopTime(result)` | 新增公開查詢；還在啟動效果中時，下一個邊界 = 現在 + 效果剩餘 + 一格 |
+| `BaseReel.updateMovement()` | 啟動效果本幀播完時，Movement 只吃 `deltaTime − 效果剩餘`，第一格起點 = 效果結束時刻 |
+| 決議 46 的延後提交 | 整段移除（`DeferredCommit`、`_deferredCommits`、`findDeferStart()`、`createDeferredCommits()`、`commitDeferredResults()`、`commitAllDeferredResults()`） |
+
+##### 驗算（框架實作本身，外部量測連續時間）
+
+| 情境 | 組數 | 結果 |
+|---|---:|---|
+| 混合（`mi` 3 種 × 錯開 4 種 × 停輪 3 種 × 伺服器延遲 0.05／0.5／1.5／3 × 平／截斷盤面 × 幀長 2 種 × 停止順序 預設／右到左 0／右到左 0.2 × 啟動效果 有／無 × 第 2 軸聽牌 有／無） | 6,912 | 反轉 0、回調順序錯 0、盤面錯 0；停得到的目標誤差 ±2e-14；停不到的一律停在最早時刻 |
+| 同上，本決議前 | 6,912 | 反轉 3,342、回調順序錯 1,807；最多早 0.47 秒 |
+| 本決議前沒有軸被鉗制的組 | 2,935 | 與本決議前**逐軸相同** |
+| 「等前一軸提交」（決議 46 做法）比本決議晚結束 | — | 1,558 組，最多 0.32 秒 |
+| 不做啟動效果修正 | — | 資料在啟動效果中送到的組，推算最多差一幀（368 軸次沒停在最早時刻） |
+| 伺服器 3 秒到、無聽牌（停輪 0.15、錯開 0.1） | 1 | 3.44 → 3.54 → 3.64（本決議前 3.44 → 3.46 → 3.48） |
+| 決議 45／46 的聽牌、急停、fastMode 驗算重跑 | 3,540 | 全部維持 0 |
+
+**斷言**：§11e 改寫（config 停輪早於物理下限時，從最早能停起算、間隔與順序保留）；新增 §11s（8 項）：伺服器晚到錯開 0.1、
+`stopTimings` 右到左 0.2、資料在啟動效果中送到。**分別還原**：不把最早能停算進目標 紅 10；啟動效果交接照舊 紅 1。
+
+> 啟動效果那條斷言要**五軸同時啟動**（排停輪時都還在效果中）且效果時長**不是幀長整數倍**（0.2 + 0.13）——
+> 效果剛好在幀邊界結束時修不修都一樣，第一版就因此還原不會紅。
+
+#### 決議 48：Turbo（`fastMode`）停止間隔為 0（已實作）
+
+`fastMode` 時 `stopTimings` 的 `stopDelaySeconds` 一律當 0，只保留停止**順序**（同一幀停下時回調照它發）——
+與 `startDelaySeconds` 在 `fastMode` 被略過同一個道理。
+
+**依據**：Cocos 移植版沒有 `stopTimings`，停輪 = 各軸 `targetStopSeconds`，`fastMode` 全軸 0 秒啟動 → 各軸填相同值就是同時停。
+1016 的 Lv1／Lv2 `staggerStop` 也是 0。
+
+**不這樣做會怎樣**：各軸目標不同 → 每格修正（決議 45）拉長的量不同 → 格邊界錯開半格 → Turbo 急停同步補的是整格，
+對不齊，會有軸晚半格停（牌庫含大圖 4,608 組中 48 次警告，本決議後 0）。
+
+說明已寫進 `SlotMachineSpinConfig`（`fastMode`、`stopDelaySeconds`、`stopTimings`），並提醒 Turbo 各軸的
+`targetStopSeconds` 也要填相同的值。斷言 §11v（2 項），還原時紅 1。
+
+#### 已修：急停的兩個既有缺陷（牌庫含大圖時才會出現）
+
+兩個都**不是今天的改動造成的**，是驗算牌庫加入 1×2／1×3 之後才掃出來 —— 之前的驗算牌庫多半只有 1×1，而且盤面只比對 id
+（見下方「驗算的教訓」）。
+
+**① 結果先到後急停：砍表演格時留下半組大 Symbol，結果被接進去**（瀏覽器截圖：第 4 軸只剩一格、兩格空白）
+
+- 成因：`BaseReel.applyQuickStopDataSkip()` 砍掉結果前還沒進場的表演格時，若有一組大 Symbol 只進場一半，前半留在進場 buffer；
+  接著進場的結果若是同一張牌（例如退場端截斷的墊格），`resolveGroupOffset()` 把它接進那半組，groupOffset 錯位
+- 決議 30（§2.2.2）處理的是同一件事，但只在**提交結果**時拆；急停砍格時漏了
+- 修法：急停真的砍到格子時，也呼叫 `dissolveIncompleteEntryGroup()`
+- 實測：測試場景設定（啟動效果、牌庫含 62／73、第 2 軸聽牌）掃急停時刻 × 幀長 4,464 組，**上一個 commit（`ad47b91`）就壞 152 組**，
+  今天的推算改動讓它更常出現（389 組），修正後 0 組
+- 斷言 §11t（3 項），還原時紅 1
+
+**② Turbo 急停同步補牌插進結果中間，那一軸永遠停不下來**
+
+- 成因：`ReelDataFlow.insertPerformanceCellsBeforeResult()` 一律插在「目前讀到的位置」前面，假設結果還沒開始進場；
+  `prepareFastQuickStopPadding()` 沒有像決議 43 的依序補格那樣先檢查 `canApplyQuickStopPadding`。結果已進場時，補的牌落在
+  結果中間，盤面永遠對不齊（實例：要 `[1,6,6]`，可視 `[4,6,6]`、資料已用完）
+- 以前 Turbo 各軸停輪時間相同不易碰到；決議 44 讓 Turbo 各軸可以不同時間後才出現（決議 48 之後又回到同時停）
+- 修法：補牌函式本身擋住（結果第一格已進場就回 0）；Turbo 同步只對還能補的軸計算與補牌
+- 實測：牌庫含大圖 4,608 組中 88 組 5 軸只停 4 軸，修正後 0 組
+- 斷言 §11u（2 項），還原兩處檢查時紅 2
+
+##### 驗算的教訓
+
+- **盤面要檢查 group 完整性，不能只比 id**：①的錯位盤面 id 仍是 `[1,73,73]`，只比 id 會判定正確。驗算腳本改成「可視段每一格都找得到
+  自己的 head」才算對
+- **牌庫要含大 Symbol**：①②都要有表演牌是大 Symbol 才會出現
 
 ### 3.9 `Reel/BaseReelIcon.ts`
 
@@ -1335,7 +2212,7 @@ node temp/tests/tests/CoreGeometry.test.js
 
 > Cocos 版當初的 Phase 4 verification 用的是同一套手法，只是 stub 的對象是 `cc`。
 
-**執行結果**：175 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）、決議 34 與 `getGroupIcons()` 29 項（`8`～`8d`，§3.9）、`getVisibleIcons()` 在截斷盤面與滾動中 14 項（`9`／`9b`，§3.9）、四方向 18 項（`10`～`10c`，§2.5）、多軸協調、守門與 Turbo 同步兩個順序 37 項（`11`～`11j`，§3.6／§3.8）。
+**執行結果**：281 項斷言全數通過。原有 56 項（階段 5 首次執行，階段 6 接上顯示層後重跑仍全過）涵蓋下列第 1～3 項與部分第 6 項；其餘為決議 30 新增 10 項（`7d`，§2.2.2）、預算切資料 6 項（`7e`，§3.5）、截斷兩端 5 項（`7f`，§2.3.1）、決議 34 與 `getGroupIcons()` 29 項（`8`～`8d`，§3.9）、`getVisibleIcons()` 在截斷盤面與滾動中 14 項（`9`／`9b`，§3.9）、四方向 18 項（`10`～`10c`，§2.5）、多軸協調、守門與 Turbo 同步兩個順序 37 項（`11`～`11j`，§3.6／§3.8）、普通模式急停依序停 11 項（`11k`，§3.8 決議 43）、自訂停止順序 10 項（`11l`，同節）、`stopTimings` 16 項（`11m`／`11n`，§3.8 決議 44）、聽牌回調成對發出 12 項（`11o`，§3.8 決議 42）、聽牌時間 17 項（`11p`，同節）、量化誤差壓到 0 新增 13 項（`11q` 11 項與 §11d／§11e 各 1 項，§3.7 決議 45）、聽牌從前一軸實際停下起算 13 項（`11r`，§3.8 決議 46）、資料到達時推算停輪 8 項（`11s`，§3.8 決議 47；另改寫 §11e）、急停砍格拆殘組 3 項（`11t`）、Turbo 補牌不插進已進場的結果 2 項（`11u`）、Turbo 停止間隔為 0 2 項（`11v`，決議 48）。
 
 
 
@@ -1364,7 +2241,23 @@ node temp/tests/tests/CoreGeometry.test.js
 - **`isAligned()` 不檢查 group 完整性。** `ReelIconManager.isAligned()` 只比對可視格的 `data.id` 與 `resultSpinId`，所以像 `1, 2, 0` 這種錯位的盤面它會放行（決議 30 之前實測過）。要不要補一道「可視段必須自成完整的組」的檢查（判準見 §2.2.1 的對照表），未定。
 
 - **`onHalfCellComplete` 這個對外 Callback 要不要保留？** 交接改成每整格固定執行（§3.4）之後，它與交接時機脫鉤。若沒有遊戲端在用第一個半格的時機，傾向保留 Callback 但退回單純的時間通知；待確認。
-- **`reconfigureStoppedLayout()` 的展開行為**：1×1 展開成 1×N 時，多出來的格子從哪裡取、原本那些 runtime 的 `groupOffset` 怎麼重算，還沒設計。
+- ~~**停輪時間的量化誤差要不要壓到 0**~~ → **決議 45 已實作**（§3.7）：含實際原點，ε = +25%，畫面上最多晚一幀。
+
+- ~~**伺服器晚到時，被鉗制的各軸停輪順序不保證**~~ → **決議 47 已解決**（§3.8）：資料到達時沿停止順序推算，軸間隔與順序照樣保留。
+
+- **聽牌（決議 42）待實作**：`speedMultiplier` 目前把 `duration` 一起除掉。修法已定案並驗算（`planned`：規劃時算目標與切速邊界，2,880 組零晚停、零順序違反）。「高於普通就不排聽牌時間」靠 Lv1／Lv2 的 SpinConfig 設 `fastMode: true` 達成，由遊戲層每次開轉以 `startSpin(mode)` 送入（已確認，1016 對應物見 §3.8）。完整依據見 §3.8。
+
+- **機台層缺「完全停」的出口**：Reel 層有 `onStopEffectCompleted`，`BaseSlotMachine` 卻整檔零次提到 `stopEffect` —— 機台只轉出「資料到定位」那一則。1016 為此手工轉了四層（`UniReel1016._endBouncePromise` → View → SlotMachine → `GameViewManager1016._waitReelBounceTask`），用來卡 wild 表演與聽牌特效的時序。**要不要做沒有疑問，未定的是形狀**（新增機台 callback 還是給 `BaseReel` 一個 `waitForStopEffectAsync()`）。完整依據見 §3.8。
+
+- **`reconfigureStoppedLayout()` 的展開行為**：1×1 展開成 1×N 時，多出來的格子從哪裡取、原本那些 runtime 的 `groupOffset` 怎麼重算，還沒設計。目前只能手寫整條對齊的三段盤面，且大 Symbol 不得跨越 buffer／可視區邊界（§3.1 的約束），所以「某一格就地展開」這個使用情境實際上要由遊戲層重算整條 strip 才寫得出來。
+
+- **`reconfigureStoppedLayout()` 在停止效果播放中沒有守衛**：它只檢查 `state === ReelState.Stopped`，而停止效果正是在 `completeStop()` 切到 Stopped **之後**才播。實測會靜默成功，畫面在剩餘效果期間跳一下。對照 `BaseReel.startRoll()` 第一行就是 `if (this._stopEffect.active) throw`，兩邊不一致。要補守衛還是改成「重排時先 `_stopEffect.reset()`」，未定 —— 後者要處理「上一輪的 `onStopEffectCompleted` 不會發出」這個副作用。
+
+- **`immediateStop()` 的兩個行為沒討論過**（都不是 bug，但沒被決定過）：
+  ① **停軸順序不保證** —— 各軸相位不同，誰先到完整 Cell 邊界誰先停。實測兩軸（第二軸 `startDelay` 0.2）得到 `reel1` 早於 `reel0`。
+  ② **未啟動的軸留在 `idle`** —— `immediateStop()` 只收 Rolling／Stopping 的軸，沒啟動的軸狀態停在 `ReelState.Idle` 而非 `Stopped`，且不發 `onReelStopped`。遊戲層若逐軸等停止回調會漏掉那幾軸。
+- **有急停時的停止順序反轉**（2026-09-26 發現）：Turbo + 結果後急停是框架問題（不能補格的軸被排除在共同目標外），修法待定；
+  普通模式是「第一個要停的軸還沒開始滾」的極端設定，要不要處理待定。見 [SESSION-2026-09-27-Rolling-Fixes.md](SESSION-2026-09-27-Rolling-Fixes.md) §3。
 - **大 Symbol 的中獎動畫／handoff**：形狀已定（決議 39：overlay 層 + 搬表演物件 + 單向跟隨），**尚未實作**；三個待補項與唯一會動到公開介面的那一項見 §3.9。
 - **`cellSpan <= visibleCellCount` 要不要加驗證？** 決議 32 已定下這條限制，但 `registerSymbolCells()` 與 `init()` 目前都不擋。超過時 `createExitTruncationCells()` 會靜默退回「只補進場端」，盤面被單一 Symbol 填滿時會算錯。
 - **Icon 數量對 Egret 的影響**：strip 從 `visible + 2` 變成 `visible + 2 × maxSpan`；Egret 沒有內建 Pool（見 Port Map §11），5 軸 × 11 格 = 55 個顯示物件要實測。

@@ -17,7 +17,7 @@ flowchart TD
     C["replaceEntryPreparationData()<br/>只換整組都在 buffer 內的格"]
     D["beginFirstCellMovement()<br/>啟動效果播完才開始"]
     E(["滾動循環<br/>每格兩個半格，見 §2"])
-    F["stopSpin(result)<br/>算出各軸 targetStopTime"]
+    F["stopSpin(result)<br/>資料到達：沿停止順序推算各軸停輪"]
     G["commitResult() → receiveResult()<br/>只記時間，資料一格都沒動"]
     H["tryCommitResultAtBoundary()<br/>下一個 Cell 邊界才真的換資料"]
     I["tryCompleteStop() → completeStop()<br/>對齊才停，再播停止效果"]
@@ -38,7 +38,7 @@ flowchart TD
 |---|---|
 | `startSpin()` / `startDueReels()` / `startOneReel()` | `BaseSlotMachine` |
 | `startRoll()` / `replaceEntryPreparationData()` / `beginFirstCellMovement()` | `BaseReel`（區塊：建立、主線） |
-| `stopSpin()` | `BaseSlotMachine` |
+| `stopSpin()` / `createCurrentStopTimings()` | `BaseSlotMachine`（每軸 = max(規劃, 前一軸停輪 + 間隔, 本軸最早能停)，主線 §3.8 決議 47） |
 | `commitResult()` | `BaseReel`（區塊：主線） |
 | `receiveResult()` / `tryCommitResultAtHandoff()` | `ReelStopFlow` |
 | `commitResult()` | `ReelDataFlow` |
@@ -140,7 +140,7 @@ this.onHalfCellComplete?.(2);
 this.onCellMovementComplete?.();
 
 if (!this.tryCompleteStop()) {      // ③ 對齊就停，否則排下一格
-    this.queueOneCellMovement(this._moveInterval);
+    this.queueOneCellMovement(this.calculateNextCellDuration());   // 每格自我修正（決議 45）
 }
 ```
 

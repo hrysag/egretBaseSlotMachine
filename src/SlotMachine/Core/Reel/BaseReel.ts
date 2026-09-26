@@ -92,6 +92,15 @@ export { ReelStopPlan, ReelStopPlanInput } from "./Runtime/ReelStopPlan";
  * → 查詢 → 等待／重設／釋放 → 零件。
  */
 export class BaseReel extends eui.Component {
+    /**
+     * 每格自我修正最多把本格時間拉長多少（決議 45，ε = +25%）。
+     *
+     * 只拉長不壓短：碰到上限時補不完的部分就放著，結果是稍微早停，
+     * 等於局部退回「每格恆為 moveInterval」。驗算中每格拉長中位數約 1%、
+     * 最大 20%（聽牌切速後剩餘格數少時），+25% 從未觸發。
+     */
+    public static readonly MAX_CELL_STRETCH = 0.25;
+
     private _inited = false;
 
     private _moveInterval = 0;
@@ -126,6 +135,41 @@ export class BaseReel extends eui.Component {
     private readonly _symbolRegistry = new ReelSymbolRegistry();
 
     private _waitingForStartEffect = false;
+
+    /** 本輪已走完的完整 Cell 數；聽牌切速的邊界以此計（決議 42）。 */
+    private _completedCellCount = 0;
+
+    /**
+     * 聽牌預定切速：走完第 `afterCellCount` 格時把 moveInterval 換成
+     * `moveInterval`（決議 42）。`switchAtSeconds` 是那個邊界的時刻，
+     * `planRescaled` 記錄停輪計畫是否已換算成切速後的真實時間。
+     */
+    private _scheduledSpeedChange?: {
+        afterCellCount: number;
+        moveInterval: number;
+        switchAtSeconds: number;
+        /** 聽牌真實結束時刻；切速後的自我修正以它為目標（決議 45）。 */
+        stopSeconds: number;
+        speedMultiplier: number;
+        planRescaled: boolean;
+    };
+
+    /**
+     * 本格的開始時刻與本格時間，以**本軸連續時間**計（決議 45）。
+     *
+     * 與 `elapsedRollTime` 不同：後者每幀開頭就吃掉整幀，Cell 邊界卻多半
+     * 落在幀中間，所以邊界上讀 elapsed 最多領先一幀。這裡逐格累加
+     * Movement 實際走的時間，邊界上就是精確時刻。
+     */
+    private _cellStartTime = 0;
+
+    private _cellDuration = 0;
+
+    /** 結果提交後到停輪還要走的 Cell 數，每個邊界遞減（決議 45）。 */
+    private _cellsUntilStop?: number;
+
+    /** 自我修正的停輪目標；聽牌軸是聽牌真實結束時刻（決議 45）。 */
+    private _correctionTarget?: number;
 
     private _stopPromise?: Promise<void>;
 
@@ -196,6 +240,11 @@ export class BaseReel extends eui.Component {
      * 最後判停或排下一格。handoffOneCell() 因此只管循環。
      */
     private readonly _secondHalfCompleteHandler = (): void => {
+        this._cellStartTime += this._cellDuration;
+        if (this._cellsUntilStop !== undefined) {
+            this._cellsUntilStop--;
+        }
+
         this.tryCommitResultAtBoundary();
         this.drainPendingHandoffs();
         if (this.onHalfCellComplete !== undefined) {
@@ -205,8 +254,11 @@ export class BaseReel extends eui.Component {
             this.onCellMovementComplete();
         }
 
+        this._completedCellCount++;
+        this.applyScheduledSpeedChange();
+
         if (!this.tryCompleteStop()) {
-            this.queueOneCellMovement(this._moveInterval);
+            this.queueOneCellMovement(this.calculateNextCellDuration());
         }
     };
 
@@ -569,12 +621,18 @@ export class BaseReel extends eui.Component {
         );
 
         if (!this._waitingForStartEffect) {
-            this.beginFirstCellMovement();
+            this.beginFirstCellMovement(this._stopFlow.elapsedRollTime);
         }
     }
 
-    private beginFirstCellMovement(): void {
-        this.queueOneCellMovement(this._moveInterval);
+    /**
+     * @param cellStartTime 第一格的開始時刻（本軸連續時間）。從 startRoll()
+     *   進來是 0；啟動效果播完才進來時是**效果結束的那一刻** —— 同一幀稍後
+     *   Movement 只吃效果結束後剩下的時間（見 updateMovement()）。
+     */
+    private beginFirstCellMovement(cellStartTime: number): void {
+        this._cellStartTime = cellStartTime;
+        this.queueOneCellMovement(this.calculateNextCellDuration());
         if (this.onRollStarted !== undefined) {
             this.onRollStarted();
         }
@@ -649,10 +707,20 @@ export class BaseReel extends eui.Component {
             this._startEffect.active || this._stopEffect.active;
 
         let startEffectCompleted = false;
+        let startEffectRemaining = 0;
 
         if (this._startEffect.active) {
+            startEffectRemaining = this._startEffect.remainingDuration;
             startEffectCompleted = this._startEffect.update(deltaTime);
         }
+
+        /*
+         * 啟動效果在本幀播完時，第一格只吃「效果結束之後」剩下的時間。
+         * 以前第一格吃整幀，效果用過的那段又被 Movement 用一次，第一格
+         * 起點落在幀頭 —— 比效果結束早、早多少取決於幀長，事先推算不出來
+         * （資料在啟動效果中送到時，停輪推算因此最多差一幀）。
+         */
+        let movementDeltaTime = deltaTime;
 
         let stopEffectCompleted = false;
 
@@ -666,13 +734,16 @@ export class BaseReel extends eui.Component {
 
         if (this._waitingForStartEffect && startEffectCompleted) {
             this._waitingForStartEffect = false;
+            movementDeltaTime = Math.max(0, deltaTime - startEffectRemaining);
 
             try {
                 if (this.onStartEffectCompleted !== undefined) {
                     this.onStartEffectCompleted();
                 }
             } finally {
-                this.beginFirstCellMovement();
+                this.beginFirstCellMovement(
+                    this._stopFlow.elapsedRollTime - movementDeltaTime,
+                );
             }
         }
 
@@ -683,7 +754,7 @@ export class BaseReel extends eui.Component {
             }
         }
 
-        this._movement.update(deltaTime);
+        this._movement.update(movementDeltaTime);
     }
 
     /**
@@ -708,6 +779,8 @@ export class BaseReel extends eui.Component {
             );
         }
 
+        this._cellDuration = moveInterval;
+
         const halfCellDistance = this.cellPitch * 0.5;
         const halfCellDuration = moveInterval * 0.5;
 
@@ -731,11 +804,264 @@ export class BaseReel extends eui.Component {
             return;
         }
 
-        this._stopFlow.tryCommitResultAtHandoff(
+        const now = this._cellStartTime;
+        const cellsUntilStop = this._stopFlow.tryCommitResultAtHandoff(
             this._moveInterval,
             this.calculateResultEntryHalfCellCount(),
             this.dissolveIncompleteEntryGroup(),
+            now,
+            this.countCellsBeforeTarget(now),
         );
+
+        if (cellsUntilStop === undefined) {
+            return;
+        }
+
+        const change = this._scheduledSpeedChange;
+
+        this._cellsUntilStop = cellsUntilStop;
+        this._correctionTarget = change !== undefined
+            ? change.stopSeconds
+            : this._stopFlow.targetStopTime;
+
+        /* 格數以原速換算；計畫裡切速點之後那段縮回真實時間（僅供除錯）。 */
+        if (change !== undefined && !change.planRescaled) {
+            this._stopFlow.rescaleStopPlanAfter(
+                change.switchAtSeconds,
+                1 / change.speedMultiplier,
+            );
+            change.planRescaled = true;
+        }
+
+        this.retimeStopPlanForCorrection(now);
+    }
+
+    /**
+     * 從這個邊界起、到停輪目標為止放得下幾個完整 Cell（決議 45）。
+     *
+     * 取 floor：每格只會被拉長，所以格數寧少勿多 —— 多一格就一定晚停。
+     *
+     * 有預定切速時分兩段算：切速前照原速數到切速邊界，切速後以聽牌速度
+     * 數到聽牌真實結束。切速前那幾格由自我修正對準切速邊界，所以切速後
+     * 那段從 `switchAtSeconds` 起算不會晚。
+     */
+    private countCellsBeforeTarget(now: number): number {
+        const change = this._scheduledSpeedChange;
+
+        if (change !== undefined) {
+            const cellsBeforeSwitch = Math.max(
+                0,
+                change.afterCellCount - (this._completedCellCount + 1),
+            );
+            const cellsAfterSwitch = Math.max(
+                0,
+                Math.floor(
+                    (change.stopSeconds - change.switchAtSeconds)
+                    / change.moveInterval
+                    + 1e-9,
+                ),
+            );
+
+            return cellsBeforeSwitch + cellsAfterSwitch;
+        }
+
+        const target = this._stopFlow.targetStopTime;
+
+        if (target === undefined) {
+            return 0;
+        }
+
+        return Math.max(
+            0,
+            Math.floor((target - now) / this._moveInterval + 1e-9),
+        );
+    }
+
+    /**
+     * 下一格要走多久：每格邊界自我修正（決議 45）。
+     *
+     * ```text
+     * 本格時間 = clamp((目標 − 現在) / 剩餘格數, 原速, 原速 × (1 + ε))
+     * ```
+     *
+     * - 有預定切速：目標是切速邊界，剩餘格數數到切速那一格
+     * - 已提交結果：目標是停輪目標（聽牌軸為聽牌真實結束），剩餘格數數到停輪
+     * - 其餘（還沒下達停止）：原速
+     *
+     * 急停與即停之後不修正，**依照當下速度**走完 —— 決議 43 依序補牌以
+     * 原速推算剩餘秒數，修正若還在動，推算就錯。
+     */
+    private calculateNextCellDuration(): number {
+        const base = this._moveInterval;
+
+        if (
+            this._stopFlow.quickStopRequested
+            || this._stopMode === ReelStopMode.Immediate
+        ) {
+            return base;
+        }
+
+        const change = this._scheduledSpeedChange;
+        let target: number;
+        let cellCount: number;
+
+        if (change !== undefined) {
+            target = change.switchAtSeconds;
+            cellCount = change.afterCellCount - this._completedCellCount;
+        } else if (
+            this._cellsUntilStop !== undefined
+            && this._correctionTarget !== undefined
+        ) {
+            target = this._correctionTarget;
+            cellCount = this._cellsUntilStop;
+        } else {
+            return base;
+        }
+
+        if (cellCount <= 0) {
+            return base;
+        }
+
+        const ideal = (target - this._cellStartTime) / cellCount;
+
+        return Math.min(
+            base * (1 + BaseReel.MAX_CELL_STRETCH),
+            Math.max(base, ideal),
+        );
+    }
+
+    /**
+     * 停輪計畫改成自我修正預計達到的時刻（僅供除錯；決議 45）。
+     *
+     * 提交時算的是「每格原速」的格線時刻；目標比它晚時，修正會把剩下的
+     * 格子拉長去對準目標，最多拉到 ε。
+     */
+    private retimeStopPlanForCorrection(now: number): void {
+        const plan = this._stopFlow.lastStopPlan;
+        const target = this._correctionTarget;
+
+        if (
+            plan === undefined
+            || target === undefined
+            || this._stopFlow.quickStopRequested
+            || target <= plan.actualStopTime
+        ) {
+            return;
+        }
+
+        const reachable = now
+            + (plan.actualStopTime - now) * (1 + BaseReel.MAX_CELL_STRETCH);
+
+        this._stopFlow.retimeStopPlan(Math.min(target, reachable));
+    }
+
+    /**
+     * 聽牌：在「不晚於 listenStartSeconds 的最後一個 Cell 邊界」切成
+     * `moveInterval / speedMultiplier`，並讓停輪落在 listenStopSeconds
+     * （時間皆為本軸 elapsedRollTime；決議 42）。
+     *
+     * 必須在 commitResult() 之前呼叫 —— 結果寫進佇列時才以目標時間換算
+     * 表演格數。格數照**原速**換算，所以目標要換成原速下的等效時間：
+     *
+     * ```text
+     * b      = 切速邊界
+     * 目標   = b + (listenStop − b) × speedMultiplier
+     * ```
+     *
+     * 切速點用本軸自己的格邊界推算（當前這格剩下的時間，或啟動效果剩下
+     * 的時間 + 一格），不假設從 0 起每格一個 moveInterval。切速在規劃時
+     * 就定好，不靠前一軸停下的事件 —— 事件觸發會晚到下一格才生效，
+     * 可能晚停（驗算 148 組真晚停）。
+     */
+    public planListenSpeedUp(
+        listenStartSeconds: number,
+        listenStopSeconds: number,
+        speedMultiplier: number,
+    ): void {
+        this.assertInitialized();
+
+        if (!this.isActive() || this._dataFlow.resultCommitted) {
+            throw new Error(
+                "Listen speed can only be planned while the reel is active and before the result is committed.",
+            );
+        }
+
+        this._scheduledSpeedChange = undefined;
+
+        if (speedMultiplier === 1 || listenStopSeconds <= listenStartSeconds) {
+            this._stopFlow.setTargetStopTime(listenStopSeconds);
+            return;
+        }
+
+        const moveInterval = this._moveInterval;
+        const nextBoundary = this._waitingForStartEffect
+            ? this._stopFlow.elapsedRollTime
+                + this._startEffect.remainingDuration
+                + moveInterval
+            : this._cellStartTime + this._cellDuration;
+        const extraCells = Math.max(
+            0,
+            Math.floor((listenStartSeconds - nextBoundary) / moveInterval + 1e-9),
+        );
+        const switchAtSeconds = nextBoundary + extraCells * moveInterval;
+
+        /* 聽牌在第一個可切速的邊界之前就結束：本軸走不到切速，照普通軸停。 */
+        if (listenStopSeconds <= switchAtSeconds) {
+            this._stopFlow.setTargetStopTime(listenStopSeconds);
+            return;
+        }
+
+        this._scheduledSpeedChange = {
+            afterCellCount: this._completedCellCount + 1 + extraCells,
+            moveInterval: moveInterval / speedMultiplier,
+            switchAtSeconds,
+            stopSeconds: listenStopSeconds,
+            speedMultiplier,
+            planRescaled: false,
+        };
+        this._stopFlow.setTargetStopTime(
+            switchAtSeconds
+            + (listenStopSeconds - switchAtSeconds) * speedMultiplier,
+        );
+    }
+
+    /** 走到預定的切速邊界就換速度（決議 42）。 */
+    private applyScheduledSpeedChange(): void {
+        const change = this._scheduledSpeedChange;
+
+        if (
+            change === undefined
+            || this._completedCellCount < change.afterCellCount
+        ) {
+            return;
+        }
+
+        this._scheduledSpeedChange = undefined;
+        this._moveInterval = change.moveInterval;
+    }
+
+    /**
+     * 急停／即停時取消尚未發生的切速：**依照當下速度**走完（決議 42）。
+     *
+     * 已切過的不在這裡（_scheduledSpeedChange 已清空），速度維持。
+     * 這也是決議 43 依序補牌的前提 —— 它以當下的 moveInterval 推算剩餘
+     * 秒數，急停後速度不能再變。
+     */
+    private cancelScheduledSpeedChange(): void {
+        const change = this._scheduledSpeedChange;
+
+        if (change === undefined) {
+            return;
+        }
+
+        if (change.planRescaled) {
+            this._stopFlow.rescaleStopPlanAfter(
+                change.switchAtSeconds,
+                change.speedMultiplier,
+            );
+        }
+
+        this._scheduledSpeedChange = undefined;
     }
 
     /**
@@ -793,7 +1119,8 @@ export class BaseReel extends eui.Component {
         }
 
         /*
-         * 交接只旋轉 _symbols，要 syncAllIcons() 才會反映到 Icon 上。
+         * 交接只輪轉陣列（資料與 Icon 一起轉），要 syncAllIcons() 才會把
+         * 新位置與進場那一格的新資料反映到 Icon 上。
          *
          * 滾動期原本靠下一幀的 onValueChanged 補上，但**最後一次交接
          * 之後沒有下一幀** —— 少了這裡，停止畫面會永遠停在交接前的狀態：
@@ -989,6 +1316,8 @@ export class BaseReel extends eui.Component {
             return;
         }
 
+        this.cancelScheduledSpeedChange();
+
         if (this._dataFlow.resultCommitted) {
             this.applyQuickStopDataSkip();
         }
@@ -1072,8 +1401,133 @@ export class BaseReel extends eui.Component {
         this._stopFlow.setQuickStopPerformanceCellBudget(cellCount);
     }
 
+    /**
+     * 急停之後還要幾秒才停（連續時間；決議 43 的依序補牌用）。
+     *
+     * ```text
+     * 當前這格剩下的時間 +（剩下的交接次數 − 1）× moveInterval
+     * ```
+     *
+     * **不用 `lastStopPlan.actualStopTime`**：它以 `elapsedRollTime` 計，
+     * 而提交發生在幀中間的 Cell 邊界、elapsed 卻已吃掉整幀 —— 各軸領先
+     * 真實邊界的量不同（0～1 幀），兩軸真實只差不到一幀時會分不出先後。
+     *
+     * 假設剩下的格子都用目前的 moveInterval；執行中改速度的路徑
+     * （聽牌切速）若之後實作，要一併納入。
+     */
+    public calculateQuickStopRemainingSeconds(): number {
+        this.assertInitialized();
+
+        return this._movement.remainingDuration
+            + (this.countHandoffsUntilStop() - 1) * this._moveInterval;
+    }
+
+    /**
+     * 結果若現在送入，本軸最早能停在哪一刻（本軸時間）。
+     *
+     * 提交發生在下一個完整 Cell 邊界，之後結果要再走完進場距離：
+     *
+     * ```text
+     * 下一個邊界 +（結果進場的交接次數 − 1 + 退場端墊格數）× moveInterval
+     * ```
+     *
+     * 與 `ReelStopFlow.tryCommitResultAtHandoff()` 算 `directResultStopTime`
+     * 是同一條式子，只是提前在送入結果之前算。機台據此在資料到達時就把
+     * 各軸停輪排好（決議 47），不必等前一軸提交。
+     *
+     * 還在播啟動效果時，第一格從效果結束那一刻起算（見 updateMovement()），
+     * 所以下一個邊界 = 現在 + 效果剩餘 + 一格，是精確值。
+     */
+    public projectEarliestStopTime(result: SymbolData[]): number {
+        this.assertInitialized();
+
+        if (!this.isActive()) {
+            throw new Error(
+                "Earliest stop time can only be projected while the reel is active.",
+            );
+        }
+
+        const nextBoundary = this._waitingForStartEffect
+            ? this._stopFlow.elapsedRollTime
+                + this._startEffect.remainingDuration
+                + this._moveInterval
+            : this._cellStartTime + this._cellDuration;
+        const exitPadCellCount = this._dataFlow.countExitTruncationCells(
+            result,
+            this.resultEntryAtDisplayStart,
+            this._cellSpanResolver,
+        );
+
+        return nextBoundary
+            + (
+                this.calculateResultEntryHalfCellCount() / 2
+                + exitPadCellCount
+            ) * this._moveInterval;
+    }
+
+    /** 還能不能補表演格 —— 結果第一格已進場就不行（決議 43）。 */
+    public get canApplyQuickStopPadding(): boolean {
+        return this._dataFlow.canInsertBeforeResult;
+    }
+
+    /**
+     * 到停輪為止還要交接幾次（含當前這格）。
+     *
+     * 結果還沒有任何一格進場時，就是 `calculateQuickStopHalfCellCount()`
+     * 的行程 —— 提交前後都成立。
+     *
+     * 結果已有格子進場就改看 strip 位置：資料列表讀完之後
+     * `ReelDataFlow.consumeNextData()` 直接回傳 `undefined`，`readIndex`
+     * 不再前進，再用資料索引算會多算。最靠退場端的本輪結果格減掉退場端
+     * 墊格，就是結果本體第一格；停輪條件是本體佔滿可視段，所以它還要走到
+     * 可視段最後一格。墊格在停輪前都還在退場 buffer 裡（buffer = maxSpan
+     * ≥ 墊格數），不會提早被推出 strip。
+     */
+    private countHandoffsUntilStop(): number {
+        const symbols = this._iconManager.symbols;
+        const spinId = this._dataFlow.spinId;
+        let deepestResultIndex = -1;
+
+        if (this._dataFlow.resultCommitted) {
+            for (let index = 0; index < symbols.length; index++) {
+                if (symbols[index].resultSpinId === spinId) {
+                    deepestResultIndex = index;
+                }
+            }
+        }
+
+        if (deepestResultIndex < 0) {
+            return Math.ceil(this.calculateQuickStopHalfCellCount() / 2);
+        }
+
+        const bodyHeadIndex =
+            deepestResultIndex - this._dataFlow.resultExitPadCellCount;
+
+        return this._iconManager.firstVisibleIndex
+            + this._iconManager.visibleCellCount
+            - 1
+            - bodyHeadIndex;
+    }
+
+    /**
+     * 結果已提交後急停：砍掉結果前還沒進場的表演格。
+     *
+     * 砍到的若包含一組大 Symbol 還沒進場的後半，已進場的前半會留在進場
+     * buffer 裡湊不滿；接著進場的結果第一格若是同一張牌（例如退場端截斷的
+     * 墊格），`resolveGroupOffset()` 會把它接進那半組，整批 groupOffset
+     * 錯位、可視段出現沒有 head 的空格。與決議 30 同一件事 —— 那邊只在
+     * 提交結果時拆，這裡在急停砍格時也要拆。
+     *
+     * 實測：測試場景設定、結果先到後急停、含截斷盤面，4,464 組中 152 組
+     * 盤面錯（上一個 commit 就存在），補上之後 0 組。
+     */
     private applyQuickStopDataSkip(): void {
         const skipped = this._dataFlow.skipPendingPerformanceData();
+
+        if (skipped.skippedCellCount > 0) {
+            this.dissolveIncompleteEntryGroup();
+        }
+
         this._stopFlow.applyQuickStopSkip(skipped, this._moveInterval);
     }
 
@@ -1092,6 +1546,7 @@ export class BaseReel extends eui.Component {
         }
 
         this._stopMode = ReelStopMode.Immediate;
+        this.cancelScheduledSpeedChange();
 
         if (this._state === ReelState.Rolling) {
             this.changeState(ReelState.Stopping);
@@ -1335,6 +1790,16 @@ export class BaseReel extends eui.Component {
         this._dataFlow.beginSpin();
         this._stopFlow.beginSpin();
         this._waitingForStartEffect = false;
+        this._completedCellCount = 0;
+        this._scheduledSpeedChange = undefined;
+        this.resetCellClock();
+    }
+
+    private resetCellClock(): void {
+        this._cellStartTime = 0;
+        this._cellDuration = 0;
+        this._cellsUntilStop = undefined;
+        this._correctionTarget = undefined;
     }
 
     private resetRuntimeData(): void {
@@ -1345,6 +1810,9 @@ export class BaseReel extends eui.Component {
         this._dataFlow.cleanup();
         this._stopFlow.cleanup();
         this._waitingForStartEffect = false;
+        this._completedCellCount = 0;
+        this._scheduledSpeedChange = undefined;
+        this.resetCellClock();
     }
 
     /**

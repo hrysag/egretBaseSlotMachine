@@ -54,9 +54,9 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 ---
 
-## 3. 成員層級：43 處差異，39 處有來由
+## 3. 成員層級：45 處差異，41 處有來由
 
-「Cocos 有、Egret 沒有」共 **43 處**（相異名稱 37 個，少數成員在兩個類別各出現一次）。逐一對過之後，**39 處是決議刪除、改名或 Egret 無對應**：
+「Cocos 有、Egret 沒有」共 **45 處**（相異名稱 39 個，少數成員在兩個類別各出現一次）。逐一對過之後，**41 處是決議刪除、改名或 Egret 無對應**：
 
 | 分類 | 成員 | 來源 |
 |---|---|---|
@@ -70,6 +70,7 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 | 主線 §4 刪除清單 | `calculateResultEntryHalfCellCount`、`calculateQuickStopHalfCellCount`、`canHandoffExitBuffer`、`applyOffset`、`createVisibleLayout`、`getDataAxisLength` | 1×1 之後不需要（含兩個 1000 步模擬迴圈） |
 | 決議 1 自然消失 | `ReelDataFlow.countCells` | 佇列已逐 Cell，`length` 就是答案 |
 | 等價替換 | `getFullyVisibleSymbols` | → `getVisibleRuntimes()`。1×1 之後「完全可見」就是可視段本身，不需要幾何判斷 |
+| 決議 41 移除 | `autoSpin`、`stopAutoSpin` | 自動旋轉屬於遊戲流程層，不屬於滾輪框架。見主線 §3.8 決議 41 |
 
 **另外：`src/SlotMachine/` 底下沒有任何 `TODO` / `FIXME` / 未實作的樁。** 每個方法都是完整實作。
 
@@ -113,13 +114,37 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 | 從沒執行過 | 所在 |
 |---|---|
-| **多軸**（實機） | 純 TS 斷言已涵蓋錯開啟動、fastMode、鎖軸與停輪順序（`tests` §11～11e），但**瀏覽器沒跑過**；`TestSlotMachine.createReelTimings()` 的 `staggerStart` 在場景裡仍未生效 |
-| 聽牌 | `BaseSlotMachine.setListenReels()` / `runListenSequence()` |
+| Turbo／fastMode／急停（實機） | 斷言 §11i／§11j 已涵蓋兩個進入順序，但測試場景沒有這顆按鈕 |
+| ~~聽牌~~ | **已進斷言**（§11o／§11p，決議 42 實作）；實機仍未跑過 |
 | 即停 | `BaseSlotMachine.immediateStop()`、`BaseReel.requestImmediateStop()`（急停兩個順序已由 §11i／§11j 涵蓋） |
-| 自動旋轉 | `BaseSlotMachine.autoSpin()` / `stopAutoSpin()` |
 | 停軸後重排 | `BaseReel.reconfigureStoppedLayout()` |
 
+> **「自動旋轉」已從本表移除 —— 那條路連同 API 一起刪掉了**（決議 41，主線 §3.8）。
+> 它從來不是「還沒跑過」，而是根本不該在框架裡：v3 底層零 auto 程式碼，1016／1024 都放在
+> `AbstractBasicGameController` + `GenericUIManager`，因為「要不要有下一輪」要看餘額、本局
+> odds、是否進 FG 與整套停止條件。
+
 **已補驗**：決議 31 的**退場端截斷**已在瀏覽器跑過 —— 這筆實機債結清。
+
+**多軸實機也結清了**（場景改成 `src/test/SlotMachineScene.ts`，可在 1 軸／3 軸之間切換）。
+四個方向各跑一輪三軸，`staggerStart = 0.1` 實測：
+
+```
+啟動 R0=0.000  R1=0.106 (Δ0.106)  R2=0.203 (Δ0.097)
+停輪 R0=1.578  R1=1.674 (Δ0.096)  R2=1.770 (Δ0.096)   順序 0→1→2
+各軸 act = 1.57 / 1.58 / 1.57   對 req = 1.60
+盤面 R0=[73,1,1]  R1=[1,73,73]  R2=[62,62,1]
+```
+
+三件事一次看到：錯開啟動生效、停輪順序與間隔維持、各軸結果互不干擾（場景刻意讓各軸
+取**不同**的盤面，索引各自加軸號）。`act` 早於 `req` 0.02～0.03s，落在「兩個 `floor`
+保證不晚於要求時間、最壞早一格」的量化範圍內（`moveInterval = 0.08`）。
+
+> **驗多軸時序一定要先擋掉 rAF 節流。** Browser pane 裡 rAF 約每秒才跑一次，而
+> `MAX_DELTA_TIME = 0.1` 會把每次 tick 的推進鉗在 0.1 秒 —— 於是遊戲時間以 1/10 速率前進，
+> 量到的軸間隔會變成 **Δ1.014 秒**（0.1 的整數倍），看起來像 `staggerStart` 壞掉。
+> 那是環境不是框架。用 `setInterval(() => egret.ticker.update(), 16)` 手動 pump 之後
+> 才量得到真值。
 
 **Turbo 同步的補牌盲點已修，兩個進入順序各一個成因**（主線 §3.6）：各軸退場端墊的格數不同時 Turbo 根本不同步，失步量精確等於墊格數。「玩家先按」是看不到還沒提交的墊格；「結果先到」是墊格被併進結果區段、`_resultStartIndex` 指的不是本體。1080 組驗算。這條是 1016 沒有的功能（它的 `fastStopRoll()` 逐軸砍到不同的保留數，本來就沒同時停），所以那邊沒這個 bug。
 
@@ -132,7 +157,7 @@ comm -23 <(ext "$C/<檔>") <(ext "src/SlotMachine/<檔>")   # Cocos 有、Egret 
 
 測試場景的 `RESULT_SCENARIOS` 可以逐一送出不完整大圖的盤面（`73,73,1` / `73,1,1` / `1,73,73` / `62,62,1` / `1,62,62`），狀態列同時印出「可視段的每一格」與 `getVisibleIcons()`，兩者在截斷盤面上的分岔看得見。
 
-純 TS 斷言 175 項。決議 37 把推進抽成 `update(deltaTime)` 之後，**機台層的時序也進了斷言範圍**（測試子類別覆寫 `startTicking()`，完全不碰引擎，時間是決定性的）。仍然不涵蓋的是真實 frame pacing、rAF 節流與實際算繪 —— 那些只能實機驗。
+純 TS 斷言 281 項。決議 37 把推進抽成 `update(deltaTime)` 之後，**機台層的時序也進了斷言範圍**（測試子類別覆寫 `startTicking()`，完全不碰引擎，時間是決定性的）。仍然不涵蓋的是真實 frame pacing、rAF 節流與實際算繪 —— 那些只能實機驗。
 
 ---
 

@@ -222,9 +222,25 @@ export class ReelIconManager {
         runtime.resultSpinId = resultSpinId;
         runtime.cellOffset = 0;
         this._symbols.unshift(runtime);
+        this.rotateExitedIconToEntry();
         this._handedOffCellCount++;
 
         return { runtime, previousData };
+    }
+
+    /**
+     * 空殼跟著資料一起轉：退場端最外面那個空殼搬回進場端。
+     *
+     * 與 Cocos 版相同 —— 空殼一路跟著同一張牌移動，圖與動畫掛在空殼上，
+     * 走出畫面後才被搬到進場預備區換上新資料。若只轉 `_symbols`，每過
+     * 一格每個空殼都會跳回原位、換成別張牌，掛在上面的動畫也跟著跳。
+     */
+    private rotateExitedIconToEntry(): void {
+        const icon = this._icons.pop();
+
+        if (icon !== undefined) {
+            this._icons.unshift(icon);
+        }
     }
 
     /**
@@ -249,6 +265,7 @@ export class ReelIconManager {
         );
         runtime.cellOffset = 0;
         this._symbols.unshift(runtime);
+        this.rotateExitedIconToEntry();
         this._handedOffCellCount++;
 
         return runtime;

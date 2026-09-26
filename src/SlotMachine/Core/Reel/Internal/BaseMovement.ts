@@ -63,6 +63,9 @@ interface ActiveMove {
  * `moveBy()` 的終點則在指令真正開始執行時，使用當前值加上相對位移。
  */
 export class BaseMovement {
+    /** 指令剩餘時間小於此值即視為本幀完成（秒）；吸收累加的浮點雜訊。 */
+    public static readonly TIME_EPSILON = 1e-9;
+
     private readonly _commands: MovementCommand[] = [];
     private _activeMove: ActiveMove | undefined;
     private _value: number;
@@ -272,10 +275,28 @@ export class BaseMovement {
             const active = this._activeMove;
             const timeNeeded =
                 active.command.duration - active.elapsedTime;
-            const consumedTime = Math.min(remainingTime, timeNeeded);
 
-            active.elapsedTime += consumedTime;
-            remainingTime -= consumedTime;
+            /*
+             * 只差浮點雜訊就算本幀完成。deltaTime 與每段 duration 各自累加，
+             * 指令終點正好落在幀邊界時（設定值多是整數倍，很常見）會差出
+             * ~1e-15，差一點的那一方就被推到下一幀 —— 規劃同時停的軸因此
+             * 被看到分屬兩幀，回調順序顛倒（決議 45 驗算 8 組）。
+             */
+            const consumedTime =
+                timeNeeded - remainingTime <= BaseMovement.TIME_EPSILON
+                    ? timeNeeded
+                    : remainingTime;
+
+            /*
+             * 判定走完時直接設成 duration，不用加的：elapsed + (duration − elapsed)
+             * 在浮點下可能比 duration 小一點點（例 0.0023 + 0.0377 < 0.04），
+             * 下面的 `elapsedTime < duration` 就會把它當成沒走完 —— 本幀剩下的
+             * 時間被丟掉，交接回呼也拖到下一幀，畫面整條軸倒退半格一幀。
+             */
+            active.elapsedTime = consumedTime === timeNeeded
+                ? active.command.duration
+                : active.elapsedTime + consumedTime;
+            remainingTime = Math.max(0, remainingTime - consumedTime);
 
             const rawProgress =
                 active.command.duration === 0

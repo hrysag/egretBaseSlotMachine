@@ -12,14 +12,19 @@ import "./EgretStub";
 
 import { ReelDataFlow } from "../src/SlotMachine/Core/Reel/Internal/ReelDataFlow";
 import { ReelIconManager } from "../src/SlotMachine/Core/Reel/Internal/ReelIconManager";
+import { BaseMovement } from "../src/SlotMachine/Core/Reel/Internal/BaseMovement";
 import { ReelSymbolRegistry } from "../src/SlotMachine/Core/Reel/Data/ReelSymbolRegistry";
 import { SymbolData } from "../src/SlotMachine/Core/Reel/Data/SymbolData";
 import { BaseReelIcon } from "../src/SlotMachine/Core/Reel/BaseReelIcon";
 import { BaseReel } from "../src/SlotMachine/Core/Reel/BaseReel";
 import { ReelIconDirection } from "../src/SlotMachine/Core/Reel/Config/ReelIconDirection";
+import { ReelEffectConfig } from "../src/SlotMachine/Core/Reel/Config/ReelEffectConfig";
 import { BaseSlotMachine } from "../src/SlotMachine/Core/BaseSlotMachine";
 import { ReelState } from "../src/SlotMachine/Core/Reel/Runtime/ReelState";
-import { SlotMachineReelTiming } from "../src/SlotMachine/Core/SlotMachine/Config/SlotMachineSpinConfig";
+import {
+    SlotMachineReelStopTiming,
+    SlotMachineReelTiming,
+} from "../src/SlotMachine/Core/SlotMachine/Config/SlotMachineSpinConfig";
 import {
     ReelIconCell,
     ReelIconLayout,
@@ -244,6 +249,34 @@ group("3b. stripOffset 不累積誤差");
 
     check("一萬次半格後 stripOffset 精確為 0", manager.stripOffset, 0);
     check("總行進距離", value, 640000);
+}
+
+group("3c. BaseMovement：判定走完的那一段，不能因浮點相加差一點點被當成沒走完");
+
+{
+    /*
+     * 0.0023 + (0.04 − 0.0023) 在浮點下比 0.04 小。以前用 += 累加，
+     * 這一段會被當成沒走完而中斷本幀：剩下的 0.0014 秒被丟掉、
+     * 緊接的回呼（交接）拖到下一幀，畫面整條軸倒退半格一幀。
+     * 幀長不規則時才會碰到，固定幀長的驗算掃不到。
+     */
+    const movement = new BaseMovement(0);
+    let callbackCount = 0;
+    movement.moveBy(100, 0.04);
+    movement.addCallback(() => {
+        callbackCount++;
+    });
+    movement.moveBy(100, 0.04);
+
+    movement.update(0.0023);
+    movement.update(0.0391);
+
+    check("緊接的回呼在同一幀執行", callbackCount, 1);
+    check(
+        "剩下的 0.0014 秒交給下一段（值 ≈ 103.5）",
+        Math.abs(movement.value - 103.5) < 1e-9,
+        true,
+    );
 }
 
 // ───────────────────────── 4. groupOffset 推導 ─────────────────────────
@@ -962,19 +995,32 @@ group("8b. onCellChanged 只在該格的內容真的變了才觸發");
     );
 
     /*
-     * 交接只輪轉 _symbols，_icons 不動，所以第 k 格的 Icon 會換成
-     * 顯示原本第 k-1 格的資料 —— 多數槽位的內容都變了。
-     * idx4／idx5 前後都是 (groupOffset 0, cellSpan 1)，值沒變就不重推。
+     * 交接時 Icon 跟著資料一起輪轉（與 Cocos 版相同）：每個 Icon 帶著
+     * 自己那張牌往退場端移一格，只有走出去的那一個回到進場端換新資料。
+     * `icons` 就是內部陣列本身，會跟著轉，所以先存交接前的順序再比。
      */
+    const beforeHandoff = icons.slice();
+    const cellBefore = beforeHandoff.map((icon) => icon.cellChangedCount);
+    const dataBefore = beforeHandoff.map((icon) => icon.data);
     manager.recycleExitedCell(symbol(7));
     manager.syncAllIcons();
 
     check(
-        "交接後只有 cell 內容真的不同的槽位重推",
-        icons.map(
-            (icon, index) => icon.cellChangedCount - baseCell[index],
+        "每個 Icon 往退場端移一格，最外面那個回到進場端",
+        beforeHandoff.map((icon) => manager.icons.indexOf(icon)),
+        [1, 2, 3, 4, 5, 6, 7, 8, 0],
+    );
+    check(
+        "只有回到進場端的那個 Icon 換資料，其餘帶著原本的牌",
+        beforeHandoff.map((icon, index) => icon.data === dataBefore[index]),
+        [true, true, true, true, true, true, true, true, false],
+    );
+    check(
+        "cell 只重推回到進場端的那一個",
+        beforeHandoff.map(
+            (icon, index) => icon.cellChangedCount - cellBefore[index],
         ),
-        [1, 1, 1, 1, 0, 0, 1, 1, 1],
+        [0, 0, 0, 0, 0, 0, 0, 0, 1],
     );
 }
 
@@ -1538,6 +1584,8 @@ class HeadlessSlotMachine extends BaseSlotMachine {
             maxCellSpan: number;
             visible: number;
         }[],
+        private readonly _stopTimings?: SlotMachineReelStopTiming[],
+        private readonly _startEffect?: ReelEffectConfig,
     ) {
         super();
         this.onReelStarted = (reelIndex) => {
@@ -1580,6 +1628,7 @@ class HeadlessSlotMachine extends BaseSlotMachine {
                         ? geometry.maxCellSpan
                         : undefined,
                 moveInterval: this._timings[index].moveIntervalSeconds,
+                startEffect: this._startEffect,
             });
             reel.setPerformanceDataBank(boardOf([1, 2, 3, 4]));
         });
@@ -1589,6 +1638,7 @@ class HeadlessSlotMachine extends BaseSlotMachine {
         this.registerSpinConfig("normal", {
             fastMode: this._fastMode,
             reelTimings: this._timings,
+            stopTimings: this._stopTimings,
         });
     }
 
@@ -1649,8 +1699,16 @@ function createMachine(
     timings: SlotMachineReelTiming[],
     fastMode = false,
     geometry?: { maxCellSpan: number; visible: number }[],
+    stopTimings?: SlotMachineReelStopTiming[],
+    startEffect?: ReelEffectConfig,
 ): HeadlessSlotMachine {
-    const machine = new HeadlessSlotMachine(timings, fastMode, geometry);
+    const machine = new HeadlessSlotMachine(
+        timings,
+        fastMode,
+        geometry,
+        stopTimings,
+        startEffect,
+    );
     const reels: BaseReel[] = [];
 
     for (let index = 0; index < reelCount; index++) {
@@ -1892,29 +1950,40 @@ async function runMultiReelSection(): Promise<void> {
             }),
             [true, true, true],
         );
+        /*
+         * 決議 45：每格邊界自我修正，以連續時間計準時停。停輪落在幀中間，
+         * 所以**看到**的時刻（這一幀的結尾）最多晚一幀、不會早。
+         * 以整輪時間軸比對：各軸規劃停在 startAt + 1.2。
+         */
         check(
-            "實際停輪不晚於要求的時間，且在一個 moveInterval 之內",
-            machine.stopLog.map((entry) => {
-                const late = entry.elapsed - 1.2;
-                return late <= 1e-6 && late > -0.08;
+            "實際停輪以連續時間計準時：看到的時刻不早、最多晚一幀",
+            machine.stopLog.map((entry, index) => {
+                const late = entry.at - (index * 0.1 + 1.2);
+                return late >= -1e-6 && late <= 1 / 60 + 1e-6;
+            }),
+            [true, true, true],
+        );
+        check(
+            "停輪計畫就是要求的時間（修正前最多早一格）",
+            machine.reelList.map((reel) => {
+                const plan = reel.lastStopPlan;
+                return Math.abs(plan.actualStopTime - plan.requestedStopTime)
+                    < 1e-9;
             }),
             [true, true, true],
         );
     }
 
-    group("11e. 要求的停輪時間早於物理下限時會被鉗到 earliest");
+    group("11e. config 的停輪時間早於物理下限：從最早能停起算，間隔與順序保留（決議 47）");
 
     /*
      * earliest 是「結果實體上還要再走幾格才進得了可視區」，那是下限 ——
-     * 補再多表演牌只會更晚停，不可能更早。要求比它還早時只能鉗制。
+     * 補再多表演牌只會更晚停，不可能更早。
      *
-     * 各軸的 earliest 不同：錯開啟動讓它們在 commitResult 當下已跑的
-     * 時間不同，相位也不同。被鉗制之後 createCurrentStopTimings() 對
-     * requested 做的遞增保證就不再適用，停輪順序可能亂掉 —— 這不是
-     * 缺陷，是要求本身不可能達成。正式設定應讓 targetStopSeconds
-     * 大於 earliest，此時順序與間隔都正確（見 §11d）。
-     *
-     * 本節只鎖住「確實發生了鉗制」，不斷言順序。
+     * 以前各軸各自被鉗到自己的 earliest，錯開啟動讓相位不同，軸間隔消失、
+     * 先後在一格內隨機（Cocos 完成版相同）。決議 47：資料到達時沿停止順序
+     * 推算，每軸 = max(規劃, 前一軸停輪 + 軸間距, 本軸 earliest)，所以
+     * 送進 Reel 的 requested 本身就不早於 earliest，停輪計畫 = requested。
      */
     {
         const machine = createMachine(3, [
@@ -1932,22 +2001,30 @@ async function runMultiReelSection(): Promise<void> {
 
         const plans = machine.reelList.map((reel) => reel.lastStopPlan);
         check(
-            "三軸的 requested 都是各自起點起算的 0.5",
-            plans.map((plan) => round2(plan.requestedStopTime)),
-            [0.5, 0.5, 0.5],
-        );
-        check(
-            "但三軸的 earliest 各不相同（相位不同）",
-            plans[0].earliestStopTime !== plans[1].earliestStopTime
-            && plans[1].earliestStopTime !== plans[2].earliestStopTime,
+            "第一軸的 config 0.5 早於物理下限：requested 就是它的 earliest",
+            Math.abs(plans[0].requestedStopTime - plans[0].earliestStopTime) < 1e-9
+            && plans[0].earliestStopTime > 0.5,
             true,
         );
         check(
-            "實際停輪時間等於 earliest，也就是被鉗制了",
-            plans.map(
-                (plan) => plan.actualStopTime === plan.earliestStopTime,
-            ),
+            "送進 Reel 的 requested 都不早於 earliest，停輪計畫 = requested",
+            plans.map((plan) =>
+                plan.requestedStopTime >= plan.earliestStopTime - 1e-9
+                && Math.abs(plan.actualStopTime - plan.requestedStopTime) < 1e-9),
             [true, true, true],
+        );
+
+        const at = machine.stopLog
+            .slice()
+            .sort((a, b) => a.reelIndex - b.reelIndex)
+            .map((entry) => entry.at);
+        check(
+            "停輪依序、軸間隔不小於 config 的 0.1（修正前各自鉗制、間隔消失）",
+            [
+                machine.stopLog.map((entry) => entry.reelIndex),
+                [at[1] - at[0], at[2] - at[1]].every((gap) => gap >= 0.1 - 1 / 60 - 1e-6),
+            ],
+            [[0, 1, 2], true],
         );
         check(
             "盤面仍然正確（鉗制影響的是時間不是結果）",
@@ -2235,6 +2312,1152 @@ async function runMultiReelSection(): Promise<void> {
             [[1, 2, 3], [1, 7, 7], [1, 2, 7]],
         );
     }
+
+    group("11k. 普通模式急停：錯開啟動時仍依序停（決議 43）");
+
+    /*
+     * 普通模式急停只把表演格砍光，之後每軸在自己的第一個可停邊界停下。
+     * 錯開啟動讓相位不同，後面的軸會比前面的早停（Cocos 完成版一樣）。
+     * 決議 43：砍完之後逐軸補上剛好足以「不早於前一軸」的格數。
+     *
+     * 兩個進入順序都要涵蓋（與 Turbo 的 §11i／§11j 同樣兩個呼叫點）：
+     *   玩家先按、結果後到 → stopSpin() 內補，此時結果尚未寫進佇列（補的是預算）
+     *   結果先到、玩家後按 → quickStop() 內補，此時結果已在佇列（直接插格）
+     *
+     * 參數取自驗算中會反轉的組合：moveInterval 0.08、錯開 0.16、含截斷盤面。
+     */
+    const staggeredBoards = [
+        boardOf([7, 1, 1]),
+        boardOf([1, 7, 7]),
+        boardOf([6, 6, 1]),
+        boardOf([1, 6, 6]),
+        boardOf([7, 7, 7]),
+    ];
+    const staggeredTimings = [
+        timing(0, 0, 2.0),
+        timing(1, 0.16, 2.0),
+        timing(2, 0.16, 2.0),
+        timing(3, 0.16, 2.0),
+        timing(4, 0.16, 2.0),
+    ];
+
+    for (const order of ["玩家先按", "結果先到"]) {
+        const machine = createMachine(5, staggeredTimings);
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+
+        if (order === "玩家先按") {
+            machine.quickStop();
+            machine.stopSpin(staggeredBoards);
+        } else {
+            machine.stopSpin(staggeredBoards);
+            const committed = await advanceUntil(
+                machine,
+                () => machine.reelList.every(
+                    (reel) => reel.lastStopPlan !== undefined,
+                ),
+            );
+            check(`${order}：結果已經寫進各軸的佇列`, committed, true);
+            machine.quickStop();
+        }
+
+        const settled = await advanceUntil(
+            machine,
+            () => machine.stopLog.length === 5,
+        );
+        check(`${order}：五軸都停下來了`, settled, true);
+
+        const at = machine.stopLog
+            .slice()
+            .sort((a, b) => a.reelIndex - b.reelIndex)
+            .map((entry) => entry.at);
+        check(
+            `${order}：停輪時刻依軸序不遞減（同一幀可並列）`,
+            at.every((value, index) =>
+                index === 0 || value >= at[index - 1] - 1e-9),
+            true,
+        );
+        check(
+            `${order}：onReelStopped 依軸序發出`,
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [0, 1, 2, 3, 4],
+        );
+        check(
+            `${order}：盤面正確，含退場端與進場端截斷`,
+            machine.getAllVisibleSymbolIds(),
+            staggeredBoards.map((board) => board.map((data) => data.id)),
+        );
+        check(
+            `${order}：至少一軸被補了格 —— 證明順序是補出來的，不是剛好`,
+            machine.reelList.some(
+                (reel) => reel.lastStopPlan.performanceCellCount > 0,
+            ),
+            true,
+        );
+    }
+
+    group("11l. 自訂停止順序：右到左（reelTimings 陣列順序）");
+
+    /*
+     * 停止順序 = SpinConfig.reelTimings 的陣列順序，與 reelIndex 無關。
+     * 左到右時軸號順序剛好等於設定順序，下面兩個缺陷都測不出來：
+     *
+     *   同幀並列的回調照軸號發 —— update() 照 _runtimeReels 走訪，
+     *     同一幀停下的軸 resolve 的先後就是軸號。改照 _updateOrder。
+     *
+     *   舊預算殘留 —— 急停發生在 stopSpin() 等待後面的軸啟動期間時，
+     *     quickStop() 與 stopSpin() 各補一次；第二次沒碰到的軸留著第一次
+     *     的預算，實際多走幾格跑到下一軸後面。改成能補的軸一律寫（0 也寫）。
+     */
+    const rightToLeft = (stagger: number): SlotMachineReelTiming[] => [
+        timing(4, 0, 2.0),
+        timing(3, stagger, 2.0),
+        timing(2, stagger, 2.0),
+        timing(1, stagger, 2.0),
+        timing(0, stagger, 2.0),
+    ];
+    const reversedBoards = [
+        boardOf([7, 1, 1]),
+        boardOf([1, 7, 7]),
+        boardOf([6, 6, 1]),
+        boardOf([1, 6, 6]),
+        boardOf([7, 7, 7]),
+    ];
+    const settleAll = async (machine: HeadlessSlotMachine): Promise<boolean> =>
+        advanceUntil(machine, () => machine.stopLog.length === 5);
+    const atInConfigOrder = (machine: HeadlessSlotMachine): number[] =>
+        [4, 3, 2, 1, 0].map((reelIndex) =>
+            machine.stopLog.filter((entry) => entry.reelIndex === reelIndex)[0].at);
+
+    {
+        const machine = createMachine(5, rightToLeft(0.16));
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.stopSpin(reversedBoards);
+        check("不急停：五軸都停下來了", await settleAll(machine), true);
+        check(
+            "不急停：onReelStopped 照設定順序（右到左）",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 3, 2, 1, 0],
+        );
+    }
+
+    {
+        /* 不錯開、全 1×1（無截斷墊格）→ 相位與行程都相同，五軸必在同一幀停。 */
+        const machine = createMachine(5, rightToLeft(0));
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.stopSpin([1, 2, 3, 4, 1].map(() => boardOf([1, 2, 3])));
+        machine.quickStop();
+        check("同幀停下：五軸都停下來了", await settleAll(machine), true);
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        check(
+            "同幀停下：前提成立 —— 五軸真的在同一幀停",
+            Math.max(...at) - Math.min(...at) < 1e-9,
+            true,
+        );
+        check(
+            "同幀停下：onReelStopped 仍照設定順序（修正前照軸號 0→4）",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 3, 2, 1, 0],
+        );
+    }
+
+    {
+        const machine = createMachine(5, rightToLeft(0.25));
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.stopSpin(reversedBoards);
+        await advance(machine, 0.05);
+
+        check(
+            "急停在 stopSpin() 等待啟動期間：前提成立 —— 最後一軸還沒啟動",
+            machine.startLog.length < 5,
+            true,
+        );
+
+        machine.quickStop();
+        check("急停在等待啟動期間：五軸都停下來了", await settleAll(machine), true);
+
+        const at = atInConfigOrder(machine);
+        check(
+            "急停在等待啟動期間：停輪時刻照設定順序不遞減（修正前第 0 軸跑到第 1 軸前面）",
+            at.every((value, index) =>
+                index === 0 || value >= at[index - 1] - 1e-9),
+            true,
+        );
+        check(
+            "急停在等待啟動期間：onReelStopped 照設定順序",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 3, 2, 1, 0],
+        );
+        check(
+            "急停在等待啟動期間：盤面正確",
+            machine.getAllVisibleSymbolIds(),
+            reversedBoards.map((board) => board.map((data) => data.id)),
+        );
+    }
+
+    group("11m. stopTimings：同時啟動、右到左停（決議 44）");
+
+    /*
+     * 啟動順序照 reelTimings、停止順序照 stopTimings。停止序列第一軸停在
+     * 「自己的啟動時刻 + targetStopSeconds」，之後每軸 = 前一軸 + stopDelaySeconds。
+     * 間隔取 0.16（= 2 × moveInterval），軸間隔的量化誤差才會趨近 0。
+     */
+    const simultaneous = [0, 1, 2, 3, 4].map((reelIndex) =>
+        timing(reelIndex, 0, 2.0));
+    const stopRightToLeft = (delay: number): SlotMachineReelStopTiming[] =>
+        [4, 3, 2, 1, 0].map((reelIndex, index) => ({
+            reelIndex,
+            stopDelaySeconds: index === 0 ? 0 : delay,
+        }));
+    const plainBoards = [1, 2, 3, 4, 1].map(() => boardOf([1, 2, 3]));
+    const stopAt = (machine: HeadlessSlotMachine, reelIndex: number): number =>
+        machine.stopLog.filter((entry) => entry.reelIndex === reelIndex)[0].at;
+    const oneCell = 0.08 + 1 / 60 + 1e-6;
+    const oneFrame = 1 / 60 + 1e-6;
+
+    {
+        const machine = createMachine(
+            5, simultaneous, false, undefined, stopRightToLeft(0.16),
+        );
+
+        machine.startSpin("normal");
+        check(
+            "同時啟動：五軸在同一刻啟動",
+            machine.startLog.map((entry) => entry.at),
+            [0, 0, 0, 0, 0],
+        );
+
+        await advance(machine, 0.75);
+        machine.stopSpin(plainBoards);
+        check("不急停：五軸都停下來了", await settleAll(machine), true);
+        check(
+            "不急停：onReelStopped 照 stopTimings（右到左）",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 3, 2, 1, 0],
+        );
+
+        const first = machine.stopLog[0];
+        check(
+            "不急停：第一軸停在自己的 targetStopSeconds，不早、最多晚一幀（決議 45）",
+            first.elapsed >= 2.0 - 1e-6 && first.elapsed <= 2.0 + oneFrame,
+            true,
+        );
+
+        const gaps = [3, 2, 1, 0].map((reelIndex) =>
+            stopAt(machine, reelIndex) - stopAt(machine, reelIndex + 1));
+        check(
+            "不急停：相鄰兩軸間隔等於 stopDelaySeconds（誤差一幀以內，修正前一格）",
+            gaps.every((gap) => Math.abs(gap - 0.16) <= oneFrame),
+            true,
+        );
+        check(
+            "不急停：盤面正確",
+            machine.getAllVisibleSymbolIds(),
+            plainBoards.map((board) => board.map((data) => data.id)),
+        );
+    }
+
+    {
+        const machine = createMachine(
+            5, simultaneous, false, undefined, stopRightToLeft(0.16),
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.stopSpin(reversedBoards);
+        await advanceUntil(
+            machine,
+            () => machine.reelList.every(
+                (reel) => reel.lastStopPlan !== undefined,
+            ),
+        );
+        machine.quickStop();
+        check("急停：五軸都停下來了", await settleAll(machine), true);
+
+        const at = [4, 3, 2, 1, 0].map((reelIndex) => stopAt(machine, reelIndex));
+        check(
+            "急停：停輪時刻照 stopTimings 不遞減",
+            at.every((value, index) =>
+                index === 0 || value >= at[index - 1] - 1e-9),
+            true,
+        );
+        check(
+            "急停：onReelStopped 照 stopTimings",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 3, 2, 1, 0],
+        );
+        check(
+            "急停：盤面正確，含截斷",
+            machine.getAllVisibleSymbolIds(),
+            reversedBoards.map((board) => board.map((data) => data.id)),
+        );
+    }
+
+    {
+        /* 鎖軸：未作用的軸從停止序列移除，它的間隔一起消失。 */
+        const machine = createMachine(
+            5, simultaneous, false, undefined, stopRightToLeft(0.16),
+        );
+
+        machine.startSpin("normal", [0, 2, 4]);
+        await advance(machine, 0.75);
+        machine.stopSpin(plainBoards);
+        check(
+            "鎖軸：三軸都停下來了",
+            await advanceUntil(machine, () => machine.stopLog.length === 3),
+            true,
+        );
+        check(
+            "鎖軸：只有作用軸、照 stopTimings 順序",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 2, 0],
+        );
+    }
+
+    group("11n. 守門：stopTimings 必須與 reelTimings 一對一");
+
+    checkThrows("少一軸", () => {
+        createMachine(3, [timing(0, 0, 2), timing(1, 0, 2), timing(2, 0, 2)],
+            false, undefined, [
+                { reelIndex: 2, stopDelaySeconds: 0 },
+                { reelIndex: 1, stopDelaySeconds: 0.16 },
+            ]);
+    });
+    checkThrows("重複", () => {
+        createMachine(3, [timing(0, 0, 2), timing(1, 0, 2), timing(2, 0, 2)],
+            false, undefined, [
+                { reelIndex: 2, stopDelaySeconds: 0 },
+                { reelIndex: 2, stopDelaySeconds: 0.16 },
+                { reelIndex: 1, stopDelaySeconds: 0.16 },
+            ]);
+    });
+    checkThrows("不在 reelTimings 裡的軸", () => {
+        createMachine(3, [timing(0, 0, 2), timing(1, 0, 2), timing(2, 0, 2)],
+            false, undefined, [
+                { reelIndex: 2, stopDelaySeconds: 0 },
+                { reelIndex: 1, stopDelaySeconds: 0.16 },
+                { reelIndex: 3, stopDelaySeconds: 0.16 },
+            ]);
+    });
+    checkThrows("stopDelaySeconds 為負", () => {
+        createMachine(3, [timing(0, 0, 2), timing(1, 0, 2), timing(2, 0, 2)],
+            false, undefined, [
+                { reelIndex: 2, stopDelaySeconds: 0 },
+                { reelIndex: 1, stopDelaySeconds: -0.1 },
+                { reelIndex: 0, stopDelaySeconds: 0.16 },
+            ]);
+    });
+
+    /*
+     * 11o 用的輔助（群組標題在 11p 之後）。
+     *
+     * runOneListenReel() 等前一軸停下後，以前若聽牌軸已停就直接 return，
+     * onListenStart／onListenEnd 兩個都不發。前一軸在某幀 update() 裡停下，
+     * await 之後的續行要等同一幀所有軸推進完才跑 —— 聽牌軸同幀停下時
+     * （Turbo 同步、急停）續行時已是 Stopped。修正前 fastMode 急停 0 發出。
+     */
+    const listenRun = async (
+        fastMode: boolean,
+        quickStop: "none" | "before" | "after",
+    ): Promise<{ log: string[]; settled: boolean }> => {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0, 2.0)),
+            fastMode,
+        );
+        const log: string[] = [];
+
+        machine.onListenStart = (reelIndex) => log.push(`start${reelIndex}`);
+        machine.onListenEnd = (reelIndex) => log.push(`end${reelIndex}`);
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.setListenReels([
+            { reelIndex: 2, duration: 0.6, speedMultiplier: 1 },
+            { reelIndex: 3, duration: 0.6, speedMultiplier: 1 },
+        ]);
+
+        if (quickStop === "before") {
+            machine.quickStop();
+        }
+
+        machine.stopSpin(plainBoards);
+
+        if (quickStop === "after") {
+            await advanceUntil(
+                machine,
+                () => machine.reelList.every(
+                    (reel) => reel.lastStopPlan !== undefined,
+                ),
+            );
+            machine.quickStop();
+        }
+
+        const settled = await settleAll(machine);
+        await flush();
+        return { log, settled };
+    };
+
+    group("11p. 聽牌時間：規劃時算定，加速後補格把時長補回 duration（決議 42）");
+
+    /*
+     * 修正前 runOneListenReel() 在前一軸停下時改目標（行程早已定案，無效）
+     * 又改速度（生效），聽牌時長縮成 duration / m：m = 2 時 0.6 秒量到 0.333。
+     * 現在由 stopSpin() 規劃時呼叫 BaseReel.planListenSpeedUp()：切速排在
+     * 「不晚於聽牌開始的最後一個 Cell 邊界」，目標換成原速下的等效時間。
+     *
+     * 5 軸、錯開 0.16、targetStop 2.0、moveInterval 0.08，第 2 軸聽牌 0.6 秒：
+     *   第 2 軸規劃 0.32 啟動；前一軸（第 1 軸）規劃停輪 0.16 + 2.0 = 2.16
+     *   → 第 2 軸聽牌結束 = 2.16 + 0.6 = 2.76（整輪時間）
+     *   換成本軸時間時減的是**實際**原點（啟動那一幀的開頭，略早於 0.32；決議 45）
+     */
+    const listenTimings = [0, 1, 2, 3, 4].map((reelIndex) =>
+        timing(reelIndex, reelIndex === 0 ? 0 : 0.16, 2.0));
+    const runListenTiming = async (
+        speedMultiplier: number,
+        options: { fastMode?: boolean; listen?: boolean; pressAt?: number } = {},
+    ): Promise<HeadlessSlotMachine> => {
+        const machine = createMachine(
+            5,
+            options.fastMode === true
+                ? [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0, 2.0))
+                : listenTimings,
+            options.fastMode === true,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+
+        if (options.listen !== false) {
+            machine.setListenReels([
+                { reelIndex: 2, duration: 0.6, speedMultiplier },
+            ]);
+        }
+
+        machine.stopSpin(plainBoards);
+
+        if (options.pressAt !== undefined) {
+            await advance(machine, options.pressAt - machine.clock);
+            machine.quickStop();
+        }
+
+        await settleAll(machine);
+        return machine;
+    };
+    const elapsedAtStop = (machine: HeadlessSlotMachine, reelIndex: number): number =>
+        machine.stopLog.filter((entry) => entry.reelIndex === reelIndex)[0].elapsed;
+
+    for (const speedMultiplier of [1, 2, 3]) {
+        const machine = await runListenTiming(speedMultiplier);
+        const stopped = elapsedAtStop(machine, 2);
+
+        /*
+         * 決議 45：以整輪時間軸比對（本軸時間的原點是實際啟動那一幀的開頭，
+         * 不是 0.32）。聽牌結束 = 前一軸規劃停輪 2.16 + 0.6 = 2.76；
+         * 切速前、切速後兩段各自修正，看到的時刻不早、最多晚一幀。
+         */
+        const listenEnd = stopAt(machine, 2) - 2.76;
+        check(
+            `m = ${speedMultiplier}：聽牌軸停在 2.76（整輪時間），不早、最多晚一幀（修正前 m = 2 約 2.16 + 0.3）`,
+            listenEnd >= -1e-6 && listenEnd <= oneFrame,
+            true,
+        );
+        check(
+            `m = ${speedMultiplier}：停輪順序不變、盤面正確`,
+            [
+                machine.stopLog.map((entry) => entry.reelIndex),
+                machine.getAllVisibleSymbolIds(),
+            ],
+            [
+                [0, 1, 2, 3, 4],
+                plainBoards.map((board) => board.map((data) => data.id)),
+            ],
+        );
+
+        if (speedMultiplier > 1) {
+            const plan = machine.reelList[2].lastStopPlan;
+            check(
+                `m = ${speedMultiplier}：lastStopPlan.actualStopTime 反映切速後的真實時間（一格以內）`,
+                Math.abs(plan.actualStopTime - stopped) <= oneCell,
+                true,
+            );
+        }
+    }
+
+    {
+        /* fastMode 不排聽牌時間：與不設聽牌逐軸相同（修正前最多相差 7.85 秒，Turbo 失步）。 */
+        const withListen = await runListenTiming(2, { fastMode: true });
+        const withoutListen = await runListenTiming(2, { fastMode: true, listen: false });
+
+        check(
+            "fastMode：設了聽牌也與不設聽牌逐軸同時停",
+            withListen.stopLog.map((entry) => entry.at),
+            withoutListen.stopLog.map((entry) => entry.at),
+        );
+    }
+
+    {
+        /*
+         * 聽牌途中急停依照當下速度：
+         *   切速前按（2.05 秒，切速邊界在 2.16）→ 取消切速，維持原速 0.08
+         *
+         * 切速前那一組**必須按在邊界前一刻**：按得太早（例如 1.0 秒），砍完
+         * 表演格後這一軸在走到切速格之前就停了，取不取消都一樣 —— 還原
+         * 「取消切速」時這項不會紅，等於沒測到。
+         *   切速後按（2.3 秒，聽牌中）→ 維持聽牌速度 0.04
+         */
+        const before = await runListenTiming(2, { pressAt: 2.05 });
+        const after = await runListenTiming(2, { pressAt: 2.3 });
+
+        check(
+            "切速前急停：預定切速被取消，維持原速",
+            before.reelList[2].moveInterval,
+            0.08,
+        );
+        check(
+            "切速後急停：維持聽牌速度",
+            after.reelList[2].moveInterval,
+            0.04,
+        );
+
+        for (const [label, machine] of [["切速前急停", before], ["切速後急停", after]] as [string, HeadlessSlotMachine][]) {
+            const at = [0, 1, 2, 3, 4].map((reelIndex) => stopAt(machine, reelIndex));
+            check(
+                `${label}：停輪時刻不遞減、盤面正確`,
+                at.every((value, index) =>
+                    index === 0 || value >= at[index - 1] - 1e-9)
+                && JSON.stringify(machine.getAllVisibleSymbolIds())
+                    === JSON.stringify(plainBoards.map((board) => board.map((data) => data.id))),
+                true,
+            );
+        }
+    }
+
+    {
+        const machine = createMachine(5, listenTimings);
+
+        checkThrows("setListenReels：speedMultiplier < 1（不支援聽牌減速）", () => {
+            machine.setListenReels([{ reelIndex: 2, duration: 0.6, speedMultiplier: 0.5 }]);
+        });
+        checkThrows("setListenReels：speedMultiplier 非有限數", () => {
+            machine.setListenReels([{ reelIndex: 2, duration: 0.6, speedMultiplier: Number.NaN }]);
+        });
+        checkThrows("setListenReels：duration 為負", () => {
+            machine.setListenReels([{ reelIndex: 2, duration: -0.1, speedMultiplier: 2 }]);
+        });
+        checkThrows("setListenReels：reelIndex 超出範圍", () => {
+            machine.setListenReels([{ reelIndex: 9, duration: 0.6, speedMultiplier: 2 }]);
+        });
+    }
+
+    group("11q. 量化誤差壓到 0：規劃同時停的軸真的同時停（決議 45）");
+
+    /*
+     * 決議 44 留下的現象（選 ③ 等本項）：錯開啟動 0.1、stopTimings 右到左、
+     * stopDelaySeconds = 0，五軸規劃同時停在 2.4 + 0.4 = 2.8。
+     *
+     * 修正前各軸量化到自己的格邊界，先後在一格內隨機，回調發成 4,0,1,2,3。
+     * 只做每格修正仍會反轉 —— 各軸原點差不到一幀，要以「實際原點」規劃才歸零；
+     * 2.8 又剛好落在幀邊界上，浮點雜訊會把同一刻停下的軸拆到兩幀，要靠
+     * BaseMovement.TIME_EPSILON 吸收。三者缺一，本組都會紅。
+     */
+    {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) =>
+                timing(reelIndex, reelIndex === 0 ? 0 : 0.1, 2.4)),
+            false,
+            undefined,
+            stopRightToLeft(0),
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.stopSpin(plainBoards);
+        check("同時停：五軸都停下來了", await settleAll(machine), true);
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        check(
+            "同時停：五軸在同一幀停下",
+            Math.max(...at) - Math.min(...at) < 1e-9,
+            true,
+        );
+        check(
+            "同時停：那一幀就是 2.8（不早、最多晚一幀）",
+            at[0] >= 2.8 - 1e-6 && at[0] <= 2.8 + oneFrame,
+            true,
+        );
+        check(
+            "同時停：onReelStopped 照 stopTimings（修正前 4,0,1,2,3）",
+            machine.stopLog.map((entry) => entry.reelIndex),
+            [4, 3, 2, 1, 0],
+        );
+    }
+
+    {
+        /*
+         * 錯開 0.13（不是幀長的整數倍）：軸在規劃時刻之後的第一幀才啟動，
+         * 實際原點比規劃值早了一截。不用實際原點時各軸各自準時、卻準在
+         * 不同的起點上，五軸被拆到兩幀（驗算 spread 0.0167）。
+         */
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) =>
+                timing(reelIndex, reelIndex === 0 ? 0 : 0.13, 2.4)),
+            false,
+            undefined,
+            stopRightToLeft(0),
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.75);
+        machine.stopSpin(plainBoards);
+        check("錯開 0.13：五軸都停下來了", await settleAll(machine), true);
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        check(
+            "錯開 0.13：五軸在同一幀停下，且不早於 2.92、最多晚一幀",
+            Math.max(...at) - Math.min(...at) < 1e-9
+            && at[0] >= 2.92 - 1e-6 && at[0] <= 2.92 + oneFrame,
+            true,
+        );
+    }
+
+    {
+        /*
+         * 聽牌切速前那一段也要修正：聽牌在本軸**啟動效果還沒播完**時規劃，
+         * 切速邊界只能估（第一格實際從效果播完那一幀的開頭起算，早於估計），
+         * 格線因此比 switchAtSeconds 早。切速前不修正時，切速後那幾格
+         * 補不回來，聽牌軸早停（驗算 −6.67e-3 秒，1/30 幀下看得到）。
+         */
+        const step = 1 / 30;
+        const machine = createMachine(
+            5,
+            listenTimings,
+            false,
+            undefined,
+            undefined,
+            {
+                enabled: true,
+                distance: 10,
+                outwardDuration: 0.13,
+                returnDuration: 0.2,
+            },
+        );
+
+        machine.startSpin("normal");
+        machine.setListenReels([
+            { reelIndex: 4, duration: 0.16, speedMultiplier: 2 },
+        ]);
+        machine.stopSpin(plainBoards);
+        check(
+            "啟動效果中規劃聽牌：五軸都停下來了",
+            await advanceUntil(machine, () => machine.stopLog.length === 5, 12, step),
+            true,
+        );
+
+        /* 第 3 軸規劃停在 0.48 + 2.0 = 2.48，聽牌 0.16 → 2.64。 */
+        const late = stopAt(machine, 4) - 2.64;
+        check(
+            "啟動效果中規劃聽牌：聽牌軸不早於 2.64、最多晚一幀",
+            late >= -1e-6 && late <= step + 1e-6,
+            true,
+        );
+    }
+
+    {
+        /*
+         * 低幀率（10 fps，一幀 0.1 秒 > moveInterval）：一幀內會跨過好幾個
+         * Cell 邊界，每格修正仍以連續時間計，不受幀長影響。
+         */
+        const lowFps = 0.1;
+        const machine = createMachine(3, [
+            timing(0, 0, 1.23),
+            timing(1, 0.1, 1.23),
+            timing(2, 0.1, 1.23),
+        ]);
+
+        machine.startSpin("normal");
+        await advance(machine, 0.3, lowFps);
+        machine.stopSpin([boardOf([1, 2, 3]), boardOf([7, 1, 1]), boardOf([1, 6, 6])]);
+        check(
+            "低幀率：三軸都停下來了",
+            await advanceUntil(machine, () => machine.stopLog.length === 3, 12, lowFps),
+            true,
+        );
+        check(
+            "低幀率：各軸看到的停輪不早、最多晚一幀（0.1 秒）",
+            machine.stopLog.map((entry) => {
+                const late = entry.at - (entry.reelIndex * 0.1 + 1.23);
+                return late >= -1e-6 && late <= lowFps + 1e-6;
+            }),
+            [true, true, true],
+        );
+        check(
+            "低幀率：停輪計畫就是要求的時間、盤面正確",
+            [
+                machine.reelList.map((reel) => Math.abs(
+                    reel.lastStopPlan.actualStopTime
+                    - reel.lastStopPlan.requestedStopTime,
+                ) < 1e-9),
+                machine.getAllVisibleSymbolIds(),
+            ],
+            [[true, true, true], [[1, 2, 3], [7, 1, 1], [1, 6, 6]]],
+        );
+    }
+
+    group("11r. 聽牌從前一軸實際停下起算：伺服器晚到時聽牌仍完整（決議 46）");
+
+    /*
+     * targetStopSeconds 0.15、伺服器 3 秒才送結果：前面的軸被鉗到 earliest（實際晚停）。
+     * 決議 42 以前一軸的**規劃**停輪（0.15）起算，聽牌軸目標 1.75 早已過去，
+     * 聽牌只剩 0.017 秒；決議 46 改從前一軸**實際**停下起算。
+     */
+    const lateServerRun = async (
+        listen: { reelIndex: number; duration: number; speedMultiplier: number }[],
+        quickStopAfter?: number,
+    ): Promise<{ machine: HeadlessSlotMachine; log: string[]; settled: boolean }> => {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) =>
+                timing(reelIndex, reelIndex === 0 ? 0 : 0.1, 0.15)),
+        );
+        const log: string[] = [];
+
+        machine.onListenStart = (reelIndex) => log.push(`start${reelIndex}`);
+        machine.onListenEnd = (reelIndex) => log.push(`end${reelIndex}`);
+        machine.setListenReels(listen);
+        machine.startSpin("normal");
+        await advance(machine, 3.0);
+        machine.stopSpin(reversedBoards);
+
+        if (quickStopAfter !== undefined) {
+            await advance(machine, quickStopAfter);
+            machine.quickStop();
+        }
+
+        const settled = await settleAll(machine);
+        await flush();
+        return { machine, log, settled };
+    };
+    const paired = (log: string[], reelIndexes: number[]): boolean =>
+        reelIndexes.every((reelIndex) =>
+            log.filter((entry) => entry === `start${reelIndex}`).length === 1
+            && log.filter((entry) => entry === `end${reelIndex}`).length === 1
+            && log.indexOf(`start${reelIndex}`) < log.indexOf(`end${reelIndex}`));
+
+    {
+        const { machine, log, settled } = await lateServerRun([
+            { reelIndex: 1, duration: 1.5, speedMultiplier: 1.5 },
+        ]);
+
+        check("伺服器晚到、第 1 軸聽牌：五軸都停下來了", settled, true);
+        check(
+            "伺服器晚到：聽牌 = 前一軸實際停下 + 1.5（誤差一幀內；修正前 0.017）",
+            Math.abs(stopAt(machine, 1) - stopAt(machine, 0) - 1.5) <= oneFrame,
+            true,
+        );
+        check(
+            "伺服器晚到：聽牌軸之後的第 2 軸保留原本軸間距 0.1",
+            Math.abs(stopAt(machine, 2) - stopAt(machine, 1) - 0.1) <= oneFrame,
+            true,
+        );
+        check(
+            "伺服器晚到：聽牌回調成對、盤面正確",
+            [
+                paired(log, [1]),
+                machine.getAllVisibleSymbolIds(),
+            ],
+            [true, reversedBoards.map((board) => board.map((data) => data.id))],
+        );
+    }
+
+    {
+        const { machine, log, settled } = await lateServerRun([
+            { reelIndex: 1, duration: 1.5, speedMultiplier: 1.5 },
+            { reelIndex: 2, duration: 1.0, speedMultiplier: 2 },
+        ]);
+
+        check("伺服器晚到、連續聽牌：五軸都停下來了", settled, true);
+        check(
+            "伺服器晚到、連續聽牌：兩軸各自完整（1.5、1.0，誤差一幀內）",
+            [
+                Math.abs(stopAt(machine, 1) - stopAt(machine, 0) - 1.5) <= oneFrame,
+                Math.abs(stopAt(machine, 2) - stopAt(machine, 1) - 1.0) <= oneFrame,
+            ],
+            [true, true],
+        );
+        check("伺服器晚到、連續聽牌：回調成對", paired(log, [1, 2]), true);
+    }
+
+    {
+        /*
+         * 結果送出後 0.01 秒按急停：第 1 軸起都還在等前一軸（延後中）。
+         * 延後的軸必須當下就提交 —— 不然它們之後照聽牌規劃提交，會在急停後
+         * 被切速（驗算：第 1 軸變 0.053），違反「急停後依照當下速度」。
+         */
+        const { machine, log, settled } = await lateServerRun(
+            [{ reelIndex: 1, duration: 1.5, speedMultiplier: 1.5 }],
+            0.01,
+        );
+        const at = [0, 1, 2, 3, 4].map((reelIndex) => stopAt(machine, reelIndex));
+
+        check("延後期間急停：五軸都停下來了", settled, true);
+        check(
+            "延後期間急停：聽牌時間取消（第 1 軸不再多轉 1.5 秒）",
+            at[1] - at[0] < 0.5,
+            true,
+        );
+        check(
+            "延後期間急停：不再排聽牌切速，維持原速 0.08（急停後依照當下速度）",
+            machine.reelList[1].moveInterval,
+            0.08,
+        );
+        check(
+            "延後期間急停：延後的軸停輪時刻不遞減、盤面正確、回調成對",
+            [
+                at.slice(1).every((value, index) =>
+                    index === 0 || value >= at[index] - 1e-9),
+                machine.getAllVisibleSymbolIds(),
+                paired(log, [1]),
+            ],
+            [true, reversedBoards.map((board) => board.map((data) => data.id)), true],
+        );
+    }
+
+    {
+        /* 連續聽牌、0.05 秒按急停：不當下提交時停輪順序亂成 0,2,1,3,4。 */
+        const { machine, settled } = await lateServerRun(
+            [
+                { reelIndex: 1, duration: 1.5, speedMultiplier: 1.5 },
+                { reelIndex: 2, duration: 1.5, speedMultiplier: 1.5 },
+            ],
+            0.05,
+        );
+
+        check("延後期間急停、連續聽牌：五軸都停下來了", settled, true);
+        check(
+            "延後期間急停、連續聽牌：onReelStopped 依軸序、兩軸都維持原速",
+            [
+                machine.stopLog.map((entry) => entry.reelIndex),
+                [machine.reelList[1].moveInterval, machine.reelList[2].moveInterval],
+            ],
+            [[0, 1, 2, 3, 4], [0.08, 0.08]],
+        );
+    }
+
+    group("11s. 伺服器晚到：各軸照 config 的間隔與停止順序停（決議 47）");
+
+    /*
+     * 停輪時間 0.15、伺服器 3 秒才送：以前各軸都被鉗到自己的 earliest，
+     * 間隔消失、先後隨機（1,215 次反轉／1,728 組）。現在資料到達時沿停止
+     * 順序推算：第一軸停在 earliest，之後每軸接在前一軸之後 + config 間隔。
+     */
+    const lateGaps = async (
+        stopTimings?: SlotMachineReelStopTiming[],
+    ): Promise<{ machine: HeadlessSlotMachine; settled: boolean }> => {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) =>
+                timing(reelIndex, reelIndex === 0 ? 0 : 0.1, 0.15)),
+            false,
+            undefined,
+            stopTimings,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 3.0);
+        machine.stopSpin(reversedBoards);
+        return { machine, settled: await settleAll(machine) };
+    };
+
+    {
+        const { machine, settled } = await lateGaps();
+        const gaps = [1, 2, 3, 4].map((reelIndex) =>
+            stopAt(machine, reelIndex) - stopAt(machine, reelIndex - 1));
+
+        check("伺服器晚到、錯開 0.1：五軸都停下來了", settled, true);
+        check(
+            "伺服器晚到、錯開 0.1：依軸序停，相鄰間隔 0.1（誤差一幀內）",
+            [
+                machine.stopLog.map((entry) => entry.reelIndex),
+                gaps.every((gap) => Math.abs(gap - 0.1) <= oneFrame),
+            ],
+            [[0, 1, 2, 3, 4], true],
+        );
+        check(
+            "伺服器晚到、錯開 0.1：盤面正確",
+            machine.getAllVisibleSymbolIds(),
+            reversedBoards.map((board) => board.map((data) => data.id)),
+        );
+    }
+
+    {
+        const { machine, settled } = await lateGaps(stopRightToLeft(0.2));
+        const gaps = [3, 2, 1, 0].map((reelIndex) =>
+            stopAt(machine, reelIndex) - stopAt(machine, reelIndex + 1));
+
+        check("伺服器晚到、stopTimings 右到左 0.2：五軸都停下來了", settled, true);
+        check(
+            "伺服器晚到、stopTimings 右到左 0.2：照 config 順序停，相鄰間隔 0.2（誤差一幀內）",
+            [
+                machine.stopLog.map((entry) => entry.reelIndex),
+                gaps.every((gap) => Math.abs(gap - 0.2) <= oneFrame),
+            ],
+            [[4, 3, 2, 1, 0], true],
+        );
+    }
+
+    {
+        /*
+         * 資料在啟動效果中途送到（測試場景的預設：0.05 秒）。第一格從效果
+         * 結束那一刻起算，下一個邊界才推算得準 —— 以前第一格吃整幀、起點落在
+         * 幀頭，推算出來的最早時刻會比真正的晚（最多一幀）。
+         *
+         * 五軸同時啟動（排停輪時都還在效果中），效果 0.33 秒不是幀長 1/30 的
+         * 整數倍 —— 效果剛好在幀邊界結束時修不修都一樣，測不到。
+         */
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0, 0.15)),
+            false,
+            undefined,
+            undefined,
+            {
+                enabled: true,
+                distance: 50,
+                outwardDuration: 0.2,
+                returnDuration: 0.13,
+            },
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.05, 1 / 30);
+        machine.stopSpin(reversedBoards);
+        const settled = await advanceUntil(machine, () => machine.stopLog.length === 5, 12, 1 / 30);
+        const plan = machine.reelList[0].lastStopPlan;
+
+        check("啟動效果中送到：五軸都停下來了", settled, true);
+        check(
+            "啟動效果中送到：第一軸推算的最早時刻就是真正的最早時刻",
+            Math.abs(plan.requestedStopTime - plan.earliestStopTime) < 1e-9,
+            true,
+        );
+        check(
+            "啟動效果中送到：依軸序停、盤面正確",
+            [
+                machine.stopLog.map((entry) => entry.reelIndex),
+                machine.getAllVisibleSymbolIds(),
+            ],
+            [[0, 1, 2, 3, 4], reversedBoards.map((board) => board.map((data) => data.id))],
+        );
+    }
+
+    group("11t. 結果先到後急停：砍表演格時也要拆掉進場端沒湊滿的那組");
+
+    /*
+     * 急停砍掉結果前的表演格時，若有一組大 Symbol 只進場了一半，留下的半組
+     * 會待在進場 buffer；接著進場的結果若是同一張牌（這裡是第 3 軸 [1,7,7]
+     * 的退場端墊格 7），就被接進那半組，groupOffset 錯位、可視段出現沒有
+     * head 的空格（瀏覽器截圖：第 4 軸只剩一格）。id 看起來仍是 [1,7,7]，
+     * 所以要檢查每一格都找得到自己的 head。
+     *
+     * 重現條件照測試場景：啟動效果、牌庫含 1×2／1×3、第 1 軸聽牌、
+     * 第 4 幀送結果、第 46 幀急停。
+     */
+    {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) =>
+                timing(reelIndex, reelIndex === 0 ? 0 : 0.1, 0.15)),
+            false,
+            undefined,
+            undefined,
+            {
+                enabled: true,
+                distance: 50,
+                outwardDuration: 0.2,
+                returnDuration: 0.1,
+            },
+        );
+        const boards = [
+            boardOf([7, 7, 7]),
+            boardOf([7, 7, 1]),
+            boardOf([7, 1, 1]),
+            boardOf([1, 7, 7]),
+            boardOf([6, 6, 1]),
+        ];
+
+        machine.reelList.forEach((reel) => {
+            reel.setPerformanceDataBank(boardOf([1, 6, 3, 7, 2, 4, 6, 3, 7, 4]));
+        });
+        machine.setListenReels([
+            { reelIndex: 1, duration: 1.5, speedMultiplier: 1.5 },
+        ]);
+        machine.startSpin("normal");
+
+        for (let frame = 1; frame <= 900 && machine.stopLog.length < 5; frame++) {
+            machine.clock += 1 / 60;
+            machine.update(1 / 60);
+
+            if (frame === 4) {
+                machine.stopSpin(boards);
+            }
+
+            if (frame === 46) {
+                machine.quickStop();
+            }
+
+            await flush();
+        }
+
+        const headsIntact = machine.reelList.map((reel) => {
+            const symbols = reel.symbols;
+
+            for (
+                let index = reel.firstVisibleIndex;
+                index < reel.firstVisibleIndex + reel.visibleCellCount;
+                index++
+            ) {
+                const head = index - symbols[index].groupOffset;
+
+                if (
+                    head < 0
+                    || symbols[head].groupOffset !== 0
+                    || symbols[head].data.id !== symbols[index].data.id
+                ) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        check("結果先到後急停：五軸都停下來了", machine.stopLog.length, 5);
+        check(
+            "結果先到後急停：可視段每一格都找得到自己的 head（修正前第 3 軸錯位）",
+            headsIntact,
+            [true, true, true, true, true],
+        );
+        check(
+            "結果先到後急停：盤面 id 正確",
+            machine.getAllVisibleSymbolIds(),
+            boards.map((board) => board.map((data) => data.id)),
+        );
+    }
+
+    group("11u. Turbo 急停：結果已進場的軸不能再補牌（不然停不下來）");
+
+    /*
+     * Turbo 同步補牌是插在「目前讀到的位置」前面。某一軸的結果已經開始進場
+     * 時再補，牌會插進結果中間、把結果切成兩段，這一軸永遠對不齊 —— 實測
+     * 5 軸只停 4 軸（第 2 軸可視 [4,6,6]，要的是 [1,6,6]）。
+     * Turbo 加上 stopTimings 之後各軸時間不同，才會碰到。
+     */
+    {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => ({
+                reelIndex,
+                startDelaySeconds: reelIndex === 0 ? 0 : 0.1,
+                targetStopSeconds: 0.15,
+                moveIntervalSeconds: 0.05,
+            })),
+            true,
+            undefined,
+            stopRightToLeft(0.2),
+        );
+        const boards = [
+            boardOf([1, 7, 7]),
+            boardOf([6, 6, 1]),
+            boardOf([1, 6, 6]),
+            boardOf([1, 2, 3]),
+            boardOf([7, 7, 7]),
+        ];
+
+        machine.reelList.forEach((reel) => {
+            reel.setPerformanceDataBank(boardOf([1, 6, 3, 7, 2, 4, 6, 3, 7, 4]));
+        });
+        machine.startSpin("normal");
+        await advance(machine, 0.5);
+        machine.stopSpin(boards);
+        await advance(machine, 0.5);
+        machine.quickStop();
+
+        check("Turbo 結果先到後急停：五軸都停下來了", await settleAll(machine), true);
+        check(
+            "Turbo 結果先到後急停：盤面正確",
+            machine.getAllVisibleSymbolIds(),
+            boards.map((board) => board.map((data) => data.id)),
+        );
+    }
+
+    group("11v. Turbo 忽略 stopDelaySeconds：全軸同時停（照 Cocos 移植版）");
+
+    /*
+     * startDelaySeconds 在 fastMode 本來就被略過（全軸 0 秒啟動）；
+     * stopDelaySeconds 同理當 0。Cocos 移植版沒有 stopTimings，Turbo 各軸都在
+     * 0 + targetStopSeconds 停。不忽略的話各軸目標不同，每格修正拉長的量不同，
+     * 格邊界錯開半格，Turbo 急停同步會有軸晚半格停。
+     */
+    {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0.1, 1.2)),
+            true,
+            undefined,
+            stopRightToLeft(0.2),
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.3);
+        machine.stopSpin(plainBoards);
+        check("Turbo + stopTimings：五軸都停下來了", await settleAll(machine), true);
+
+        const at = machine.stopLog.map((entry) => entry.at);
+        check(
+            "Turbo + stopTimings 0.2：全軸同一幀停、回調照 stopTimings 順序",
+            [
+                Math.max(...at) - Math.min(...at) < 1e-9,
+                machine.stopLog.map((entry) => entry.reelIndex),
+            ],
+            [true, [4, 3, 2, 1, 0]],
+        );
+    }
+
+    group("11o. 聽牌回調：有設定聽牌的軸一律成對發出");
+
+    for (const [label, fastMode, quickStop] of [
+        ["普通模式、不急停（對照）", false, "none"],
+        ["普通模式、先按急停", false, "before"],
+        ["fastMode、結果先到後急停", true, "after"],
+        ["fastMode、先按急停", true, "before"],
+    ] as [string, boolean, "none" | "before" | "after"][]) {
+        const { log, settled } = await listenRun(fastMode, quickStop);
+
+        check(`${label}：五軸都停下來了`, settled, true);
+        check(
+            `${label}：兩個聽牌軸各發一次開始與結束，且開始在結束之前`,
+            [2, 3].every((reelIndex) =>
+                log.filter((entry) => entry === `start${reelIndex}`).length === 1
+                && log.filter((entry) => entry === `end${reelIndex}`).length === 1
+                && log.indexOf(`start${reelIndex}`) < log.indexOf(`end${reelIndex}`)),
+            true,
+        );
+        check(
+            `${label}：照停止順序（第 2 軸的開始在第 3 軸之前）`,
+            log.indexOf("start2") < log.indexOf("start3"),
+            true,
+        );
+    }
+
 }
 
 // ───────────────────────── 統計 ─────────────────────────

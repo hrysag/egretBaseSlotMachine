@@ -106,7 +106,12 @@ export class TestReelIcon extends BaseReelIcon {
 
     protected onResetIcon(previousData?: SymbolData): void {
         if (this._art !== undefined) {
-            this._art.texture = null;
+            /*
+             * egret 的 d.ts 把 Bitmap.texture 宣告成 Texture（少了 | null），
+             * 但執行期吃 null 就是清圖。null! 的型別是 never，可指派給任何
+             * 型別，行為一個位元都不變。
+             */
+            this._art.texture = null!;
             this._art.visible = false;
         }
     }

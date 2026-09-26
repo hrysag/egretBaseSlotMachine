@@ -45,6 +45,11 @@ export class ReelAxisEffect {
         return this._outwardDuration + this._returnDuration;
     }
 
+    /** 本次效果還剩幾秒；未播放時為 0（決議 42 推算第一格邊界用）。 */
+    public get remainingDuration(): number {
+        return this._active ? this._movement.remainingDuration : 0;
+    }
+
     public configure(config?: ReelEffectConfig): void {
         if (this._active) {
             throw new Error(

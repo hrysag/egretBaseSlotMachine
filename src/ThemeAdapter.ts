@@ -41,7 +41,14 @@ class ThemeAdapter implements eui.IThemeAdapter {
         function onResGet(e: string): void {
             onSuccess.call(thisObject, e);
         }
-        function onResError(e: RES.ResourceEvent): void {
+        /*
+         * RES.addEventListener/removeEventListener 的簽章收的是
+         * (event: egret.Event) => void，strictFunctionTypes 之下不接受
+         * 更窄的參數型別，所以在函式內部才轉成 ResourceEvent。
+         */
+        function onResError(event: egret.Event): void {
+            const e = event as RES.ResourceEvent;
+
             if (e.resItem.url == url) {
                 RES.removeEventListener(RES.ResourceEvent.ITEM_LOAD_ERROR, onResError, null);
                 onError.call(thisObject);
@@ -54,8 +61,8 @@ class ThemeAdapter implements eui.IThemeAdapter {
             }, this);
         }
         else if (typeof generateEUI2 !== 'undefined') {
-            RES.getResByUrl("resource/gameEui.json", (data, url) => {
-                window["JSONParseClass"]["setData"](data);
+            RES.getResByUrl("resource/gameEui.json", (data: any, resUrl: string) => {
+                (window as any)["JSONParseClass"]["setData"](data);
                 egret.callLater(() => {
                     onSuccess.call(thisObject, generateEUI2);
                 }, this);
@@ -65,8 +72,8 @@ class ThemeAdapter implements eui.IThemeAdapter {
             if (url.indexOf(".exml") > -1) {
                 let dirPath = url.replace(".exml", "_EUI.json");
                 if (!generateJSON.paths[url]) {
-                    RES.getResByUrl(dirPath, (data) => {
-                        window["JSONParseClass"]["setData"](data);
+                    RES.getResByUrl(dirPath, (data: any) => {
+                        (window as any)["JSONParseClass"]["setData"](data);
                         egret.callLater(() => {
                             onSuccess.call(thisObject, generateJSON.paths[url]);
                         }, this);
@@ -92,4 +99,4 @@ class ThemeAdapter implements eui.IThemeAdapter {
 
 declare var generateEUI: { paths: string[], skins: any }
 declare var generateEUI2: { paths: string[], skins: any }
-declare var generateJSON: { paths: string[], skins: any }
+declare var generateJSON: { paths: { [key: string]: any }, skins: any }

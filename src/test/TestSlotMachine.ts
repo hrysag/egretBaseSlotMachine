@@ -48,9 +48,20 @@ export class TestSlotMachine extends BaseSlotMachine {
     /** 對應 Cocos 版的 @property 欄位。 */
     private readonly _visibleCellCount = 3;
     private readonly _cellSize = TEST_CELL_PITCH;
+    /**
+     * 明寫而不讓 Registry 自動推導。
+     *
+     * `BaseReelConfig.maxCellSpan` 的 JSDoc 建議這樣做：自動推導是取
+     * 已註冊 cellSpan 的最大值，牌庫一改（例如某軸剛好沒有大牌）
+     * strip 長度就會悄悄跟著變，排錯時對不上。073 是 1×3，所以是 3。
+     */
+    private readonly _maxCellSpan = 3;
     private readonly _normalMoveInterval = 0.08;
+    private readonly _turboMoveInterval = 0.05;
+    private readonly _l2MoveInterval = 0.016;
+    /** L2 的啟動上拉與停止回彈時間倍率；0.15 = 用原時間的 15%。 */
+    private readonly _l2EffectTimeScale = 0.15;
     private readonly _staggerStart = 0.1;
-    private readonly _targetStopTime = 1.6;
 
     private readonly _startEffectEnabled = true;
     private readonly _startEffectDistance = 50;
@@ -72,13 +83,74 @@ export class TestSlotMachine extends BaseSlotMachine {
     public constructor(
         private readonly _layoutType = ReelIconDirection.Vertical,
         private readonly _inverseDirection = false,
+        /**
+         * 每軸的目標停輪秒數。預設 0.15 取自 Cocos 參考場景
+         * （`SlotMachineTest.scene` 裡 `TestSlotMachine.targetStopTime`）。
+         *
+         * 它低於所有模式的**物理下限** —— 結果的第一格要走完
+         * `(firstVisibleIndex + visibleCellCount - 1)` 次交接才進得了可視段，
+         * 也就是 `5 × moveInterval`：normal 0.40s、turbo 0.25s、**L2 0.08s**。
+         * 所以三個模式都會被鉗到各自的下限，速度差直接反映成停輪快慢，
+         * L2 於是「刷一下就是新盤面」。
+         *
+         * 設成 1.6 這種遠高於下限的值會讓三個模式都轉滿 1.6 秒，
+         * 只剩糊的程度不同 —— 那就看不出模式差異了。
+         */
+        private readonly _targetStopTime = 0.15,
     ) {
         super();
+    }
+
+    /**
+     * 每幀通知，給測試場景排自己的時程用（例如模擬 Server 回應延遲）。
+     *
+     * 對應 Cocos 版 `TestSlotMachine.update()` 裡那段 `resultCommitDelay`
+     * 計時 —— 那邊 Cocos 會自動呼叫 Component.update()，Egret 沒有，
+     * 而機台層已經有唯一心跳（決議 37 把推進抽成 `update(deltaTime)`），
+     * 所以這裡只是把同一份 deltaTime 轉出去，**不另外開第二個心跳**。
+     *
+     * 時程「內容」屬於流程層，寫在場景；這裡只負責轉送。
+     */
+    public onUpdate?: (deltaTime: number) => void;
+
+    /**
+     * Hook 排在 `super.update()` **之前**。
+     *
+     * 這樣場景累積的「本輪已經過多久」在同一幀內就已經含入這次的
+     * deltaTime，與機台內部的 `_spinElapsed` 對齊 —— 於是 `onReelStarted`
+     * 在 `super.update()` 裡觸發時，場景記下的時刻才不會少一幀。
+     * 排在後面的話，rAF 被節流（一幀 0.1 秒）時那一幀的誤差會很明顯。
+     */
+    public update(deltaTime: number): void {
+        if (this.onUpdate !== undefined) {
+            this.onUpdate(deltaTime);
+        }
+
+        super.update(deltaTime);
     }
 
     /** 本模式使用的 Spin mode 名稱，場景按鈕用得到。 */
     public get normalMode(): string {
         return "normal";
+    }
+
+    /**
+     * Turbo：`fastMode: true`，每格更快，而且**各軸同時啟動**
+     * （`BaseSlotMachine.createPendingStarts()` 在 fastMode 下略過
+     * `startDelaySeconds`）—— 那是 Turbo 同步停輪的相位前提。
+     * 急停的補牌同步（`prepareFastQuickStopPadding()`）也只在這個模式下跑。
+     */
+    public get turboMode(): string {
+        return "turbo";
+    }
+
+    /**
+     * L2：最快速模式。`moveInterval = 0.016`（約一幀一格），
+     * 外加 `effectTimeScale` 把啟動／停止效果壓到 15% —— 否則效果自己的
+     * 0.3 秒會比整輪滾動還長。用來壓 Movement 與交接的極端相位。
+     */
+    public get l2Mode(): string {
+        return "l2";
     }
 
     public get visibleCellCount(): number {
@@ -93,7 +165,21 @@ export class TestSlotMachine extends BaseSlotMachine {
                 inverseDirection: this._inverseDirection,
                 visibleCellCount: this._visibleCellCount,
                 cellSize: this._cellSize,
-                moveInterval: this._normalMoveInterval,
+                maxCellSpan: this._maxCellSpan,
+                /*
+                 * 這裡**刻意不填 moveInterval**。
+                 *
+                 * `BaseReelConfig.moveInterval` 是 optional —— JSDoc 寫明
+                 * 「也可稍後由 setRollTiming() 設定；startRoll() 前至少
+                 * 要有一處提供」。而 `BaseSlotMachine.startOneReel()` 每輪
+                 * 開始前都會依當輪 SpinConfig 呼叫 `setRollTiming()`，
+                 * 所以速度的唯一來源就是 registerSpinConfig() 註冊的
+                 * `SlotMachineReelTiming.moveIntervalSeconds`。
+                 *
+                 * 在這裡填 `_normalMoveInterval` 會變成第二份速度來源，
+                 * 而且隱含假設第一輪是 normal —— 三個模式各有開始鍵之後
+                 * 那個假設就不成立了。
+                 */
                 startEffect: {
                     enabled: this._startEffectEnabled,
                     distance: this._startEffectDistance,
@@ -120,6 +206,19 @@ export class TestSlotMachine extends BaseSlotMachine {
             fastMode: false,
             reelTimings: this.createReelTimings(
                 this._normalMoveInterval,
+            ),
+        });
+        this.registerSpinConfig(this.turboMode, {
+            fastMode: true,
+            reelTimings: this.createReelTimings(
+                this._turboMoveInterval,
+            ),
+        });
+        this.registerSpinConfig(this.l2Mode, {
+            fastMode: true,
+            effectTimeScale: this._l2EffectTimeScale,
+            reelTimings: this.createReelTimings(
+                this._l2MoveInterval,
             ),
         });
     }

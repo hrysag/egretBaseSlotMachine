@@ -66,6 +66,27 @@ export class ReelDataFlow {
     }
 
     /**
+     * 結果區段開頭的**退場端墊格**數。
+     *
+     * 提交之後，strip 上帶本輪 `resultSpinId` 的格子裡，最靠退場端的
+     * 就是這幾格 —— 減掉它們才是結果本體的第一格。
+     */
+    public get resultExitPadCellCount(): number {
+        return this._resultExitPadCellCount;
+    }
+
+    /**
+     * 還能不能在結果前面插表演格（決議 43）。
+     *
+     * 結果區段的第一格一旦被讀走，再從 `_resultStartIndex` 前面插格就會
+     * 把結果切成兩段 —— 盤面永遠對不齊、這一軸停不下來。
+     */
+    public get canInsertBeforeResult(): boolean {
+        return !this.resultCommitted
+            || this._resultStartIndex >= this._dataList.readIndex;
+    }
+
+    /**
      * 取代表演牌庫，並清除上一輪尚未完成的結果區段。
      *
      * 牌庫本身以 **Symbol** 為單位（遊戲端照原本的方式定義牌庫）；
@@ -379,7 +400,16 @@ export class ReelDataFlow {
         performanceDataProvider: ReelPerformanceDataProvider,
         validator: ReelDataValidator,
     ): number {
-        if (!this.resultCommitted || cellCount <= 0) {
+        /*
+         * 結果第一格（含退場端墊格）已進場就不能再補：補牌是插在「目前讀到
+         * 的位置」前面，那時會落在結果中間，把結果切成兩段 —— 永遠對不齊、
+         * 這一軸停不下來（實測 Turbo + stopTimings 結果先到後急停，5 軸只停 4 軸）。
+         */
+        if (
+            !this.resultCommitted
+            || cellCount <= 0
+            || !this.canInsertBeforeResult
+        ) {
             return 0;
         }
 

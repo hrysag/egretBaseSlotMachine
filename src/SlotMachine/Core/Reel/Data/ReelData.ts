@@ -83,10 +83,10 @@ export interface ReelIconLayout {
     /**
      * 本格在 `BaseReel.symbols` / `BaseReel.icons` 上的索引。
      *
-     * 滾動期間不變 —— 輪轉的是 `_symbols`，Icon 陣列本身不動，
-     * 第 k 格的資料每次交接後重新綁到固定待在第 k 格的那個 Icon。
-     * 未來的掉落式會分割重排兩條陣列，屆時才會變動，因此這個值
-     * 每幀都由 ReelIconManager 重推，不由 Icon 自己記住。
+     * 每次交接都會變 —— Icon 跟著資料一起輪轉（與 Cocos 版相同），
+     * 同一個 Icon 一路往退場端走、索引每格加一，走出去之後回到 0
+     * （進場端）換上新資料。因此這個值每幀都由 ReelIconManager 重推，
+     * 不由 Icon 自己記住。
      *
      * 有了它，Icon 自己就算得出 head 在哪：
      * `headIndex = layout.index - cell.groupOffset`。

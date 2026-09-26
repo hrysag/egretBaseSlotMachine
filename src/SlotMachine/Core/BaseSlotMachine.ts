@@ -7,6 +7,7 @@ import {
 } from "./Reel/Runtime/ReelState";
 import {
     ListenReelConfig,
+    SlotMachineReelStopTiming,
     SlotMachineReelTiming,
     SlotMachineSpinConfig,
     SpinMode,
@@ -60,13 +61,20 @@ export class BaseSlotMachine extends eui.Component {
     private readonly _spinConfigs =
         new Map<SpinMode, SlotMachineSpinConfig>();
     private _runtimeReels: BaseReel[] = [];
+
+    /**
+     * `update()` 走訪各軸的順序：本輪作用軸照停止順序在前，其餘照軸號接在後。
+     *
+     * 同一幀內停下的軸，`completeStop()` 與停止 promise resolve 的先後就是
+     * 走訪順序，`onReelStopped` 因此照這個順序發出。照軸號走訪的話，設定成
+     * 右到左或由中往外時，同幀並列的回調會退回軸號順序。
+     */
+    private _updateOrder: BaseReel[] = [];
     private _currentSpinConfig?: SlotMachineSpinConfig;
 
     private _spinning = false;
     private _stopping = false;
     private _quickStopRequested = false;
-    private _autoSpinEnabled = false;
-    private _autoSpinMode?: SpinMode;
     private _lifecycleVersion = 0;
     private _listenReels: ListenReelConfig[] = [];
     private _activeReelIndexes: number[] = [];
@@ -78,6 +86,19 @@ export class BaseSlotMachine extends eui.Component {
 
     /** 錯開啟動：與 Movement 共用同一個時間累積器。 */
     private _spinElapsed = 0;
+
+    /** 本幀開頭的 `_spinElapsed`；軸在本幀啟動時，它的原點就是這一刻。 */
+    private _frameStartElapsed = 0;
+
+    /**
+     * 各軸**實際**原點（整輪時間軸，決議 45）：啟動那一幀的開頭。
+     *
+     * 軸在 update() 內啟動，同一幀稍後 updateMovement() 吃的是整幀
+     * deltaTime，所以它的 elapsedRollTime 是從幀頭起算 —— 早於規劃的
+     * startAt，差距不到一幀、各軸不同。
+     */
+    private _originByReel: number[] = [];
+
     private _pendingStarts: PendingReelStart[] = [];
     private _resolveAllStarted?: () => void;
     private _startPromise?: Promise<void>;
@@ -133,6 +154,7 @@ export class BaseSlotMachine extends eui.Component {
 
         this.validateReels(reels);
         this._runtimeReels = [...reels];
+        this._updateOrder = [...reels];
         this.adoptReels();
 
         try {
@@ -142,6 +164,7 @@ export class BaseSlotMachine extends eui.Component {
             this._inited = true;
         } catch (error) {
             this._runtimeReels = [];
+            this._updateOrder = [];
             throw error;
         }
 
@@ -231,6 +254,7 @@ export class BaseSlotMachine extends eui.Component {
         }
 
         if (this._spinning) {
+            this._frameStartElapsed = this._spinElapsed;
             this._spinElapsed += deltaTime;
             this.startDueReels();
         }
@@ -238,12 +262,14 @@ export class BaseSlotMachine extends eui.Component {
         /*
          * 所有 Reel 都推進，不只作用軸 —— 停輪後的停止效果仍需要
          * 時間才能播完。閒置的 Reel 在 updateMovement() 內會自行略過。
+         * 走訪照 _updateOrder（停止順序），同幀停下的回調才照設定順序發。
          */
-        for (const reel of this._runtimeReels) {
+        for (const reel of this._updateOrder) {
             if (reel.inited) {
                 reel.updateMovement(deltaTime);
             }
         }
+
     }
 
     /**
@@ -301,6 +327,7 @@ export class BaseSlotMachine extends eui.Component {
             config,
             reelIndexes,
         );
+        this._updateOrder = this.createUpdateOrder();
 
         const effectTimeScale = config.effectTimeScale !== undefined
             ? config.effectTimeScale
@@ -317,6 +344,8 @@ export class BaseSlotMachine extends eui.Component {
         this._stopping = false;
         this._spinning = true;
         this._spinElapsed = 0;
+        this._frameStartElapsed = 0;
+        this._originByReel = [];
         this._pendingStarts = this.createPendingStarts(config);
 
         this._startPromise = new Promise<void>((resolve) => {
@@ -381,6 +410,7 @@ export class BaseSlotMachine extends eui.Component {
             moveInterval: timing.moveIntervalSeconds,
         });
         reel.startRoll();
+        this._originByReel[timing.reelIndex] = this._frameStartElapsed;
 
         if (this._quickStopRequested) {
             reel.requestQuickStop();
@@ -391,30 +421,30 @@ export class BaseSlotMachine extends eui.Component {
         }
     }
 
-    /** 啟用 AutoSpin 並開始第一輪。 */
-    public async autoSpin(mode: SpinMode): Promise<void> {
-        this.assertInitialized();
-
-        if (this._spinning) {
-            throw new Error(
-                "AutoSpin can only start while SlotMachine is stopped.",
-            );
-        }
-
-        this._autoSpinEnabled = true;
-        this._autoSpinMode = mode;
-        await this.startSpin(mode);
-    }
-
-    /** 只阻止下一輪，不中斷目前 Spin。 */
-    public stopAutoSpin(): void {
-        this._autoSpinEnabled = false;
-        this._autoSpinMode = undefined;
-    }
-
-    /** 登記本輪需要聽牌的 Reel。 */
+    /**
+     * 登記本輪需要聽牌的 Reel。
+     *
+     * `duration` 必須為非負有限數；`speedMultiplier` 必須為有限數且
+     * `>= 1` —— 框架不支援聽牌減速（決議 42）。
+     */
     public setListenReels(configs: ListenReelConfig[]): void {
         this.assertInitialized();
+
+        for (const config of configs) {
+            this.getReel(config.reelIndex);
+            assertNonNegativeFiniteNumber(config.duration, "duration");
+
+            if (
+                !Number.isFinite(config.speedMultiplier)
+                || config.speedMultiplier < 1
+            ) {
+                throw new Error(
+                    "speedMultiplier must be a finite number >= 1: "
+                    + `${config.speedMultiplier}.`,
+                );
+            }
+        }
+
         this._listenReels = configs.map((config) => ({
             reelIndex: config.reelIndex,
             duration: config.duration,
@@ -442,32 +472,45 @@ export class BaseSlotMachine extends eui.Component {
                 return;
             }
 
+            /*
+             * fastMode 或急停已要求時框架不排聽牌時間（決議 42），
+             * onListenStart／onListenEnd 仍照發，由遊戲層決定要不要播。
+             */
+            const planListen = !this._quickStopRequested
+                && !(
+                    this._currentSpinConfig !== undefined
+                    && this._currentSpinConfig.fastMode === true
+                );
             const stopTimings = this.createCurrentStopTimings(
                 this.getCurrentReelTimings(),
+                planListen,
             );
 
             for (const timing of stopTimings) {
                 const reel = this._runtimeReels[timing.reelIndex];
-                reel.setActiveTargetStopTime(timing.targetStopSeconds);
-                reel.commitResult(resultByReel[timing.reelIndex]);
+
+                this.commitReelResult(
+                    reel,
+                    timing.targetStopSeconds,
+                    planListen
+                        ? this.getListenConfig(timing.reelIndex)
+                        : undefined,
+                    resultByReel[timing.reelIndex],
+                );
                 waitPromises.push(
                     this.waitOneReelStopped(timing.reelIndex, reel),
                 );
             }
 
-            if (
-                this._quickStopRequested
-                && this._currentSpinConfig !== undefined
-                && this._currentSpinConfig.fastMode === true
-            ) {
-                this.prepareFastQuickStopPadding();
+            if (this._quickStopRequested) {
+                this.prepareQuickStopPadding();
             }
 
             await this.runListenSequence(stopTimings);
             await Promise.all(waitPromises);
 
             if (this._inited) {
-                await this.completeStoppedSpin();
+                this.completeStoppedSpin();
             }
         } catch (error) {
             this._stopping = false;
@@ -500,12 +543,87 @@ export class BaseSlotMachine extends eui.Component {
             }
         }
 
+        if (this._currentResultByReel !== undefined) {
+            this.prepareQuickStopPadding();
+        }
+    }
+
+    /**
+     * 急停補牌的兩個呼叫點（`stopSpin()` 與 `quickStop()`）共用入口。
+     *
+     * 兩種模式砍表演格的方式相同，差在補回多少：
+     * Turbo 補到全軸**同時**停；普通模式只補到**不早於前一軸**（決議 43）。
+     */
+    private prepareQuickStopPadding(): void {
         if (
             this._currentSpinConfig !== undefined
             && this._currentSpinConfig.fastMode === true
-            && this._currentResultByReel !== undefined
         ) {
             this.prepareFastQuickStopPadding();
+        } else {
+            this.prepareOrderedQuickStopPadding();
+        }
+    }
+
+    /**
+     * 普通模式 QuickStop：砍完表演格之後，補上剛好足以依序停止的格數（決議 43）。
+     *
+     * 錯開啟動讓各軸相位不同，砍完之後每軸在自己的第一個可停邊界停下，
+     * 後面的軸可能比前面的早停。這裡依停輪順序逐軸推算剩餘秒數，早於前一軸
+     * 就補 `ceil(差 / moveInterval)` 格 —— 盡快、但不早於前一軸；同一幀停下
+     * 視為合格。
+     *
+     * 與 Turbo 不同，比較的單位是**秒**：相位不同時半格數沒有可比性。
+     * 結果第一格已進場的軸不能再插格（會把結果切成兩段），照原計畫停；
+     * 它本來就沒有表演格可砍，不會跑到前一軸前面。
+     */
+    private prepareOrderedQuickStopPadding(): void {
+        const resultByReel = this._currentResultByReel;
+
+        if (resultByReel === undefined) {
+            return;
+        }
+
+        let previousStopSeconds = Number.NEGATIVE_INFINITY;
+
+        for (const timing of this.getStopOrder(this.getCurrentReelTimings())) {
+            const reel = this._runtimeReels[timing.reelIndex];
+
+            if (
+                resultByReel[timing.reelIndex] === undefined
+                || (
+                    reel.state !== ReelState.Rolling
+                    && reel.state !== ReelState.Stopping
+                )
+            ) {
+                continue;
+            }
+
+            let stopSeconds = reel.calculateQuickStopRemainingSeconds();
+
+            if (reel.canApplyQuickStopPadding) {
+                const cellCount = stopSeconds < previousStopSeconds - 1e-9
+                    ? Math.ceil(
+                        (previousStopSeconds - stopSeconds)
+                        / reel.moveInterval
+                        - 1e-9,
+                    )
+                    : 0;
+
+                /*
+                 * 0 也要寫。結果未提交時補的是**預算**，覆寫而非累加 ——
+                 * 急停若發生在 stopSpin() 等待後面的軸啟動期間，quickStop()
+                 * 與 stopSpin() 會各算一次；不覆寫就會留下第一次的舊預算，
+                 * 那一軸實際多走幾格、跑到下一軸後面（與 Turbo 同樣每軸都寫）。
+                 */
+                reel.applyQuickStopPadding(cellCount);
+                stopSeconds += cellCount * reel.moveInterval;
+            }
+
+            previousStopSeconds = Math.max(
+                previousStopSeconds,
+                stopSeconds,
+            );
         }
     }
 
@@ -537,12 +655,18 @@ export class BaseSlotMachine extends eui.Component {
             const reel = this._runtimeReels[timing.reelIndex];
             const result = resultByReel[timing.reelIndex];
 
+            /*
+             * 結果第一格已進場的軸不能再補（會插進結果中間，見
+             * ReelDataFlow.insertPerformanceCellsBeforeResult()），也就無從
+             * 同步；照原計畫停，不列入共同目標 —— 與普通模式的依序補格相同。
+             */
             if (
                 result === undefined
                 || (
                     reel.state !== ReelState.Rolling
                     && reel.state !== ReelState.Stopping
                 )
+                || !reel.canApplyQuickStopPadding
             ) {
                 continue;
             }
@@ -594,7 +718,6 @@ export class BaseSlotMachine extends eui.Component {
             return;
         }
 
-        this.stopAutoSpin();
         this._pendingStarts = [];
         this._stopping = true;
 
@@ -626,8 +749,6 @@ export class BaseSlotMachine extends eui.Component {
     public cleanup(): void {
         this.stopTicking();
         this._lifecycleVersion++;
-        this._autoSpinEnabled = false;
-        this._autoSpinMode = undefined;
         this._spinning = false;
         this._stopping = false;
         this._quickStopRequested = false;
@@ -642,6 +763,7 @@ export class BaseSlotMachine extends eui.Component {
         this._listenReels = [];
         this._activeReelIndexes = [];
         this._runtimeReels = [];
+        this._updateOrder = [];
         this.onReelStarted = undefined;
         this.onAllReelsStarted = undefined;
         this.onReelStopped = undefined;
@@ -699,18 +821,6 @@ export class BaseSlotMachine extends eui.Component {
 
     // ───────────────── 內部 ─────────────────
 
-    private async startNextAutoSpinIfNeeded(): Promise<void> {
-        if (
-            !this._inited
-            || !this._autoSpinEnabled
-            || this._autoSpinMode === undefined
-        ) {
-            return;
-        }
-
-        await this.startSpin(this._autoSpinMode);
-    }
-
     private async waitOneReelStopped(
         reelIndex: number,
         reel: BaseReel,
@@ -741,14 +851,14 @@ export class BaseSlotMachine extends eui.Component {
             await Promise.all(waitPromises);
 
             if (this._inited) {
-                await this.completeStoppedSpin();
+                this.completeStoppedSpin();
             }
         } finally {
             this._immediateStopPromise = undefined;
         }
     }
 
-    private async completeStoppedSpin(): Promise<void> {
+    private completeStoppedSpin(): void {
         this._spinning = false;
         this._stopping = false;
         this._quickStopRequested = false;
@@ -762,64 +872,261 @@ export class BaseSlotMachine extends eui.Component {
         if (this.onAllReelsStopped !== undefined) {
             this.onAllReelsStopped();
         }
-        await this.startNextAutoSpinIfNeeded();
     }
 
     /**
-     * 依原本停止順序建立本輪目標。
+     * 資料到達時，依**停止順序**排定本輪各軸的停輪（決議 44／47）。
      *
-     * 聽牌軸從前一軸的停止目標起算 duration；後續普通軸保留原本軸間距，
-     * 但不會因此成為聽牌軸。
+     * 沿停止順序逐軸推算，每一軸取三者中最晚的：
+     *
+     * ```text
+     * 普通軸 = max(基準停輪, 前一軸停輪 + 原本軸間距, 本軸最早能停)
+     * 聽牌軸 = max(前一軸停輪 + duration,              本軸最早能停)
+     * ```
+     *
+     * - **基準停輪**：config 的規劃值（createBaseStopTimes()）。資料早到時
+     *   就是它，行為與以前相同
+     * - **前一軸停輪**：上一輪迴圈推算出來的值。每格修正（決議 45）讓各軸
+     *   準時停在推算值上，所以它就是前一軸**實際**會停下的時刻 —— 伺服器
+     *   晚到、前一軸被推晚時，間隔與聽牌時間照樣從它起算（取代決議 46 的
+     *   延後提交：不必等前一軸提交，也就不會一軸一軸往後拖）
+     * - **本軸最早能停**：BaseReel.projectEarliestStopTime()，結果現在送入、
+     *   下一個邊界提交後還要走完進場距離
+     *
+     * 以前只取基準停輪：伺服器晚於停輪時間到時各軸都被鉗到自己的最早時刻，
+     * 軸間隔全部消失、先後在一格內隨機（Cocos 完成版相同）。
+     *
+     * 回傳陣列依停止順序排列 —— runListenSequence() 以此找「前一軸」。
      */
     private createCurrentStopTimings(
         timings: SlotMachineReelTiming[],
+        planListen: boolean,
     ): SlotMachineReelTiming[] {
         const result: SlotMachineReelTiming[] = [];
-        let startTime = 0;
+        const startAtByReel = this.createStartAtByReel(timings);
+        const stopOrder = this.getStopOrder(timings);
+        const baseStopByReel = this.createBaseStopTimes(
+            stopOrder,
+            startAtByReel,
+        );
         let previousBaseStopTime = 0;
-        let previousCurrentStopTime = 0;
+        let previousStopTime = 0;
 
-        for (const timing of timings) {
-            startTime += timing.startDelaySeconds;
-            const baseStopTime = startTime + timing.targetStopSeconds;
-            const listenConfig = this.getListenConfig(timing.reelIndex);
-            let currentStopTime = baseStopTime;
+        for (const timing of stopOrder) {
+            const origin = this.getReelOrigin(
+                timing.reelIndex,
+                startAtByReel,
+            );
+            const baseStopTime = baseStopByReel[timing.reelIndex];
+            const listenConfig = planListen
+                ? this.getListenConfig(timing.reelIndex)
+                : undefined;
+            let stopTime = baseStopTime;
 
             if (result.length > 0) {
-                if (listenConfig !== undefined) {
-                    currentStopTime =
-                        previousCurrentStopTime + listenConfig.duration;
-                } else {
-                    const baseStopGap = Math.max(
-                        0,
-                        baseStopTime - previousBaseStopTime,
-                    );
-                    currentStopTime = Math.max(
+                stopTime = listenConfig !== undefined
+                    ? previousStopTime + listenConfig.duration
+                    : Math.max(
                         baseStopTime,
-                        previousCurrentStopTime + baseStopGap,
+                        previousStopTime
+                        + Math.max(0, baseStopTime - previousBaseStopTime),
                     );
-                }
             } else if (listenConfig !== undefined) {
-                currentStopTime = Math.max(
-                    baseStopTime,
-                    listenConfig.duration,
-                );
+                stopTime = Math.max(baseStopTime, listenConfig.duration);
             }
+
+            stopTime = Math.max(
+                stopTime,
+                origin + this.projectEarliestStopTime(timing.reelIndex),
+            );
 
             result.push({
                 reelIndex: timing.reelIndex,
                 startDelaySeconds: timing.startDelaySeconds,
-                targetStopSeconds: Math.max(
-                    0,
-                    currentStopTime - startTime,
-                ),
+                targetStopSeconds: Math.max(0, stopTime - origin),
                 moveIntervalSeconds: timing.moveIntervalSeconds,
             });
             previousBaseStopTime = baseStopTime;
-            previousCurrentStopTime = currentStopTime;
+            previousStopTime = stopTime;
         }
 
         return result;
+    }
+
+    /** 本軸最早能停（本軸時間）；尚未送入結果或軸不在轉時不限制。 */
+    private projectEarliestStopTime(reelIndex: number): number {
+        const reel = this._runtimeReels[reelIndex];
+        const resultByReel = this._currentResultByReel;
+
+        if (
+            resultByReel === undefined
+            || resultByReel[reelIndex] === undefined
+            || (
+                reel.state !== ReelState.Rolling
+                && reel.state !== ReelState.Stopping
+            )
+        ) {
+            return 0;
+        }
+
+        return reel.projectEarliestStopTime(resultByReel[reelIndex]);
+    }
+
+    /**
+     * 寫入目標、排聽牌切速、提交結果。
+     *
+     * 聽牌窗 = 停輪前的 `duration` 秒；目標已含聽牌時間
+     * （前一軸停輪 + duration，見 createCurrentStopTimings()）。
+     */
+    private commitReelResult(
+        reel: BaseReel,
+        targetStopSeconds: number,
+        listenConfig: ListenReelConfig | undefined,
+        result: SymbolData[],
+    ): void {
+        reel.setActiveTargetStopTime(targetStopSeconds);
+
+        if (listenConfig !== undefined) {
+            reel.planListenSpeedUp(
+                targetStopSeconds - listenConfig.duration,
+                targetStopSeconds,
+                listenConfig.speedMultiplier,
+            );
+        }
+
+        reel.commitResult(result);
+    }
+
+    /**
+     * 把整輪時間軸上的停輪時刻換成本軸時間時要減掉的原點（決議 45）。
+     *
+     * 用**實際**原點（啟動那一幀的開頭），不用規劃的 startAt。規劃值與
+     * 實際值差不到一幀、各軸不同；每格自我修正讓各軸準時停在「自己以為的
+     * 時間」之後，這一點差距就是剩下唯一的軸間誤差 —— 規劃同時停的軸
+     * 會因此前後顛倒。尚未啟動的軸（不該發生）退回規劃值。
+     */
+    private getReelOrigin(
+        reelIndex: number,
+        startAtByReel: number[],
+    ): number {
+        const origin = this._originByReel[reelIndex];
+        return origin !== undefined ? origin : startAtByReel[reelIndex];
+    }
+
+    /**
+     * 各軸在整輪時間軸上的**規劃**啟動時刻。
+     *
+     * 與 createPendingStarts() 同一套規則：fastMode 全為 0（同一個同步
+     * 迴圈內一起啟動），否則沿啟動順序累加 startDelaySeconds。停輪時刻
+     * 以它排定；換成本軸時間時改用實際原點（getReelOrigin()）。
+     */
+    private createStartAtByReel(
+        timings: SlotMachineReelTiming[],
+    ): number[] {
+        const startAtByReel: number[] = [];
+        const fastMode = this._currentSpinConfig !== undefined
+            && this._currentSpinConfig.fastMode === true;
+        let startAt = 0;
+
+        for (const timing of timings) {
+            if (!fastMode) {
+                startAt += timing.startDelaySeconds;
+            }
+
+            startAtByReel[timing.reelIndex] = startAt;
+        }
+
+        return startAtByReel;
+    }
+
+    /**
+     * 本輪作用軸的停止順序（決議 44）。
+     *
+     * 未設 stopTimings 時就是啟動順序；有設時照 stopTimings 的陣列順序，
+     * 未作用（鎖軸）的軸略過。
+     */
+    private getStopOrder(
+        timings: SlotMachineReelTiming[],
+    ): SlotMachineReelTiming[] {
+        const stopTimings = this._currentSpinConfig !== undefined
+            ? this._currentSpinConfig.stopTimings
+            : undefined;
+
+        if (stopTimings === undefined) {
+            return timings;
+        }
+
+        const result: SlotMachineReelTiming[] = [];
+
+        for (const stopTiming of stopTimings) {
+            for (const timing of timings) {
+                if (timing.reelIndex === stopTiming.reelIndex) {
+                    result.push(timing);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 各軸在整輪時間軸上的**基準**停輪時刻（套用聽牌與只增不減之前）。
+     *
+     * 未設 stopTimings：各軸「實際啟動時刻 + targetStopSeconds」。
+     * 有設：停止順序的第一軸如此；之後每軸 = 前一軸 + stopDelaySeconds，
+     * 其餘軸的 targetStopSeconds 不使用。鎖軸時被略過的軸，它的間隔一起
+     * 消失 —— 與 startDelaySeconds 相同。
+     *
+     * **fastMode 時 stopDelaySeconds 一律當 0**，與 startDelaySeconds 在
+     * fastMode 被略過同一個道理：Turbo 全軸同時啟動、同時停。這是 Cocos
+     * 移植版的行為（它沒有 stopTimings，停輪 = 各軸 targetStopSeconds，
+     * fastMode 全軸 0 秒啟動）。停止**順序**照舊，同一幀停下時回調仍照它發。
+     *
+     * 不這樣做的話，各軸目標不同 → 每格修正（決議 45）拉長的量不同 →
+     * 格邊界錯開半格，Turbo 急停同步補整格對不齊，會有軸晚半格停。
+     */
+    private createBaseStopTimes(
+        stopOrder: SlotMachineReelTiming[],
+        startAtByReel: number[],
+    ): number[] {
+        const baseStopByReel: number[] = [];
+        const stopTimings = this._currentSpinConfig !== undefined
+            ? this._currentSpinConfig.stopTimings
+            : undefined;
+        const fastMode = this._currentSpinConfig !== undefined
+            && this._currentSpinConfig.fastMode === true;
+        let previousBaseStopTime = 0;
+
+        for (let index = 0; index < stopOrder.length; index++) {
+            const timing = stopOrder[index];
+            let baseStopTime =
+                startAtByReel[timing.reelIndex] + timing.targetStopSeconds;
+
+            if (stopTimings !== undefined && index > 0) {
+                baseStopTime = previousBaseStopTime
+                    + (fastMode
+                        ? 0
+                        : this.getStopDelaySeconds(stopTimings, timing.reelIndex));
+            }
+
+            baseStopByReel[timing.reelIndex] = baseStopTime;
+            previousBaseStopTime = baseStopTime;
+        }
+
+        return baseStopByReel;
+    }
+
+    private getStopDelaySeconds(
+        stopTimings: SlotMachineReelStopTiming[],
+        reelIndex: number,
+    ): number {
+        for (const stopTiming of stopTimings) {
+            if (stopTiming.reelIndex === reelIndex) {
+                return stopTiming.stopDelaySeconds;
+            }
+        }
+
+        return 0;
     }
 
     private async runListenSequence(
@@ -829,16 +1136,13 @@ export class BaseSlotMachine extends eui.Component {
 
         for (let index = 0; index < timings.length; index++) {
             const timing = timings[index];
-            const listenConfig = this.getListenConfig(timing.reelIndex);
-
-            if (listenConfig === undefined) {
+            if (this.getListenConfig(timing.reelIndex) === undefined) {
                 continue;
             }
 
             tasks.push(
                 this.runOneListenReel(
                     timing,
-                    listenConfig,
                     index > 0 ? timings[index - 1] : undefined,
                 ),
             );
@@ -847,10 +1151,17 @@ export class BaseSlotMachine extends eui.Component {
         await Promise.all(tasks);
     }
 
-    /** 前一軸實際停止後，才切換指定 Reel 的聽牌速度與效果。 */
+    /**
+     * 聽牌的**通知**：前一軸（停止順序）實際停下後發 onListenStart，
+     * 本軸停下後發 onListenEnd。
+     *
+     * 聽牌的**時間與速度**已在 stopSpin() 規劃時交給 Reel
+     * （BaseReel.planListenSpeedUp()，決議 42）；這裡不再改目標或速度 ——
+     * 以前在這裡 setActiveTargetStopTime() 時行程早已定案、改了無效，
+     * setActiveMoveInterval() 卻生效，於是聽牌時長縮成 duration / m。
+     */
     private async runOneListenReel(
         timing: SlotMachineReelTiming,
-        listenConfig: ListenReelConfig,
         previousTiming?: SlotMachineReelTiming,
     ): Promise<void> {
         if (previousTiming !== undefined) {
@@ -865,27 +1176,24 @@ export class BaseSlotMachine extends eui.Component {
 
         const reel = this._runtimeReels[timing.reelIndex];
 
-        if (
-            reel.state !== ReelState.Rolling
-            && reel.state !== ReelState.Stopping
-        ) {
-            return;
-        }
-
         /*
-         * duration 從 Callback 發生的這一刻起算，不是加在原始
-         * targetStopTime 上；前一軸的實際停止誤差不會吃掉聽牌時間。
+         * 有設定聽牌的軸一律成對發出 onListenStart → onListenEnd。
+         *
+         * 前一軸在某幀 update() 裡停下，但 await 之後的續行要等同一幀
+         * 所有軸都推進完才跑 —— 聽牌軸若同幀停下（fastMode、急停時很常見），
+         * 續行時已是 Stopped。以前這裡直接 return，兩個回調都不發，遊戲層
+         * 就無從決定要不要播聽牌表演。已停的軸直接依序發開始與結束。
          */
-        reel.setActiveTargetStopTime(
-            reel.elapsedRollTime + listenConfig.duration,
-        );
-        reel.setActiveMoveInterval(
-            timing.moveIntervalSeconds / listenConfig.speedMultiplier,
-        );
+        const stillRolling = reel.state === ReelState.Rolling
+            || reel.state === ReelState.Stopping;
+
         if (this.onListenStart !== undefined) {
             this.onListenStart(timing.reelIndex, reel);
         }
-        await reel.waitForStoppedAsync();
+
+        if (stillRolling) {
+            await reel.waitForStoppedAsync();
+        }
 
         if (this._inited) {
             if (this.onListenEnd !== undefined) {
@@ -943,6 +1251,23 @@ export class BaseSlotMachine extends eui.Component {
         if (this._stopping) {
             throw new Error("BaseSlotMachine is already stopping.");
         }
+    }
+
+    /** 本輪作用軸照停止順序在前，其餘照軸號接在後（見 `_updateOrder`）。 */
+    private createUpdateOrder(): BaseReel[] {
+        const order: BaseReel[] = [];
+
+        for (const timing of this.getStopOrder(this.getCurrentReelTimings())) {
+            order.push(this._runtimeReels[timing.reelIndex]);
+        }
+
+        for (const reel of this._runtimeReels) {
+            if (order.indexOf(reel) < 0) {
+                order.push(reel);
+            }
+        }
+
+        return order;
     }
 
     private getCurrentReelTimings(): SlotMachineReelTiming[] {
@@ -1035,6 +1360,12 @@ export class BaseSlotMachine extends eui.Component {
                 targetStopSeconds: timing.targetStopSeconds,
                 moveIntervalSeconds: timing.moveIntervalSeconds,
             })),
+            stopTimings: config.stopTimings === undefined
+                ? undefined
+                : config.stopTimings.map((timing) => ({
+                    reelIndex: timing.reelIndex,
+                    stopDelaySeconds: timing.stopDelaySeconds,
+                })),
         };
     }
 
@@ -1059,8 +1390,56 @@ export class BaseSlotMachine extends eui.Component {
             usedReelIndexes[timing.reelIndex] = true;
         }
 
+        if (config.stopTimings !== undefined) {
+            this.validateStopTimings(config, usedReelIndexes);
+        }
+
         if (config.fastMode) {
             this.assertUniformMoveInterval(config);
+        }
+    }
+
+    /**
+     * `stopTimings` 必須與 `reelTimings` 一對一（決議 44）。
+     *
+     * 少一軸的話那一軸不知道何時停；多一軸或重複則停止序列本身有歧義。
+     */
+    private validateStopTimings(
+        config: SlotMachineSpinConfig,
+        reelTimingIndexes: boolean[],
+    ): void {
+        const stopTimings = config.stopTimings;
+
+        if (!Array.isArray(stopTimings)) {
+            throw new Error("SlotMachineSpinConfig.stopTimings must be an array.");
+        }
+
+        const usedReelIndexes: boolean[] = [];
+
+        for (const timing of stopTimings) {
+            if (!reelTimingIndexes[timing.reelIndex]) {
+                throw new Error(
+                    `stopTimings reelIndex ${timing.reelIndex} is not in reelTimings.`,
+                );
+            }
+
+            if (usedReelIndexes[timing.reelIndex]) {
+                throw new Error(
+                    `Duplicate reelIndex in stopTimings: ${timing.reelIndex}.`,
+                );
+            }
+
+            assertNonNegativeFiniteNumber(
+                timing.stopDelaySeconds,
+                "stopDelaySeconds",
+            );
+            usedReelIndexes[timing.reelIndex] = true;
+        }
+
+        if (stopTimings.length !== config.reelTimings.length) {
+            throw new Error(
+                "stopTimings must list every reel in reelTimings exactly once.",
+            );
         }
     }
 

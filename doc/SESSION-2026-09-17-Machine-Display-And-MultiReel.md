@@ -149,16 +149,34 @@ node temp/tests/tests/CoreGeometry.test.js
 
 依建議順序：
 
-1. **聽牌的 `speedMultiplier`**（§4）—— 已定位、已驗證、等決定要不要修
+1. **聽牌的 `speedMultiplier`**（§4）—— **修法已定案並驗算**（主線 §3.8 決議 42：規劃時算定目標與切速邊界；
+   `fastMode`／急停不排聽牌時間、回調照發）。1016 在 Lv1／Lv2 與手動急停下聽牌的表演與時間都不啟動，逐段依據同節。**已實作**（斷言 §11o／§11p）。
+   實作時**沒有**拆「基準 `moveInterval`」與「本格時間」兩個欄位（預定切速直接換掉 `_moveInterval`，
+   決議 42 只需要這樣）—— **拆欄位改由下一項 1b 實作時處理**
+1b. **停輪量化誤差壓到 0**（主線 §3.7「待辦：把量化誤差壓到 0」）——
+   提案已完整驗算（單軸誤差 → 0、同步停輪零影響、速度變動中位數 0%），
+   **未實作，且必須排在聽牌之後**
 2. **即停** —— `BaseSlotMachine.immediateStop()` / `BaseReel.requestImmediateStop()` 仍 0 次執行
-3. **自動旋轉** —— `autoSpin()` / `stopAutoSpin()` 仍 0 次
+3. ~~**自動旋轉**~~ —— **已刪除**（決議 41，主線 §3.8）。不是「還沒跑過」，是不該在框架裡
 4. **停軸後重排** —— `reconfigureStoppedLayout()` 仍 0 次
-5. **多軸實機** —— 場景仍是單軸，`staggerStart` 在瀏覽器裡還沒生效過
+5. ~~**多軸實機**~~ —— **已完成**。場景改成 `src/test/SlotMachineScene.ts`（1 軸／3 軸可切換），
+   四個方向各跑過三軸；`staggerStart = 0.1` 實測 Δ0.106／0.097，停輪 Δ0.096／0.096、順序 0→1→2。
+   驗的時候要先擋掉 Browser pane 的 rAF 節流，見 Port-Audit §5
 6. **`getGroupRuntimes()`** —— Drop 的第一個相依，走訪邏輯已現成（`ReelIconManager.getGroupIndexRange()`），只差公開入口
 7. 決議 39／40 的實作
 8. Drop（見 [Drop-Module-Readiness.md](Drop-Module-Readiness.md) §6）
 
-第 2～4 項與已修的三個 bug 同源（都是停輪時間的算術，且從沒執行過），**建議一起掃**。
+第 2、4 項與已修的三個 bug 同源（都是停輪時間的算術，且從沒執行過），**建議一起掃**。
+
+> **本期之後追加**（讀 doc 時查 autoSpin 的來歷順便查到的，全部記在主線 §3.8／§6）：
+>
+> - **機台層缺「完全停」的出口** —— `BaseSlotMachine` 整檔零次提到 `stopEffect`，只轉出「資料到定位」那一則。1016 為此手工轉了四層。要不要做沒有疑問，未定的是形狀
+> - **`reconfigureStoppedLayout()` 在停止效果播放中沒有守衛** —— `startRoll()` 有，這裡沒有
+> - **`immediateStop()` 的停軸順序不保證、未啟動軸留在 `idle` 且不發 `onReelStopped`**
+>
+> 另外注意：**即停／聽牌／停軸後重排這三項在 `tests/CoreGeometry.test.ts` 裡零斷言**（grep
+> `immediateStop|setListenReels|reconfigureStoppedLayout|speedMultiplier` 無命中）。175 項涵蓋的是
+> §1 Registry 到 §11 多軸協調。上述三項目前只有一次性的 scratch probe 驗過，**沒有留下回歸**。
 
 ---
 

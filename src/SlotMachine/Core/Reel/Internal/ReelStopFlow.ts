@@ -132,12 +132,21 @@ export class ReelStopFlow {
      *
      * 停輪規劃只使用時間與資料的 cellSpan，不讀取 Icon 位置，
      * 也不預演未來 Movement。算出的 Cell 預算直接交給 DataFlow。
+     *
+     * `now` 是這個 Cell 邊界的**連續時間**（本軸逐格累加），不是
+     * `elapsedRollTime` —— 後者每幀開頭就吃掉整幀，最多領先邊界一幀。
+     * `availableCellCount` 是到目標為止放得下的完整 Cell 數，由 BaseReel
+     * 依聽牌切速分段算好（決議 45）。
+     *
+     * @returns 從本邊界起到停輪還要走的 Cell 數；本次沒有提交時為 undefined
      */
     public tryCommitResultAtHandoff(
         moveInterval: number,
         resultEntryHalfCellCount: number,
         dissolvedEntryGroupCellCount: number,
-    ): boolean {
+        now: number,
+        availableCellCount: number,
+    ): number | undefined {
         const visibleResult = this._visibleResult;
         const targetStopTime = this._targetStopTime;
 
@@ -145,7 +154,7 @@ export class ReelStopFlow {
             visibleResult === undefined
             || targetStopTime === undefined
         ) {
-            return false;
+            return undefined;
         }
 
         /*
@@ -167,31 +176,16 @@ export class ReelStopFlow {
          * 剩餘半格數必為偶數，1×N 時代的奇偶修正已不需要。
          */
         const halfCellDuration = moveInterval * 0.5;
-        const targetRemainingHalfCellCount = Math.max(
-            0,
-            Math.floor(
-                (targetStopTime - this._elapsedRollTime)
-                / halfCellDuration,
-            ),
-        );
+        const resultEntryCellCount = totalResultEntryHalfCellCount / 2;
 
         const directResultStopTime =
-            this._elapsedRollTime
-            + totalResultEntryHalfCellCount * halfCellDuration;
+            now + totalResultEntryHalfCellCount * halfCellDuration;
         const performanceCellBudget =
             this._quickStopRequested
                 ? (this._quickStopPerformanceCellBudget !== undefined
                     ? this._quickStopPerformanceCellBudget
                     : 0)
-                : Math.max(
-                    0,
-                    Math.floor(
-                        (
-                            targetRemainingHalfCellCount
-                            - totalResultEntryHalfCellCount
-                        ) / 2,
-                    ),
-                );
+                : Math.max(0, availableCellCount - resultEntryCellCount);
         const retainedPerformanceCellCount =
             this._dataFlow.commitResult(
                 visibleResult,
@@ -213,7 +207,7 @@ export class ReelStopFlow {
             retainedPerformanceCellCount,
         });
         this.clearResultEntry();
-        return true;
+        return resultEntryCellCount + retainedPerformanceCellCount;
     }
 
     /**
@@ -224,6 +218,10 @@ export class ReelStopFlow {
         cellCount: number,
     ): void {
         this._quickStopPerformanceCellBudget = cellCount;
+    }
+
+    public get quickStopRequested(): boolean {
+        return this._quickStopRequested;
     }
 
     public requestQuickStop(): boolean {
@@ -292,6 +290,49 @@ export class ReelStopFlow {
             performanceCellCount:
                 this._lastStopPlan.performanceCellCount
                 + cellCount,
+        };
+    }
+
+    /**
+     * 停輪計畫中 `switchAtSeconds` 之後的時間乘上 `ratio`（聽牌切速，決議 42）。
+     *
+     * 切速讓之後每格變成 `1 / m` 倍，計畫卻是以原速換算格數的，所以要把
+     * 切速點之後那一段縮回真實時間；急停取消預定切速時再用 `m` 放回去。
+     * 僅供除錯讀取，不影響停輪。
+     */
+    public rescaleStopPlanAfter(
+        switchAtSeconds: number,
+        ratio: number,
+    ): void {
+        const plan = this._lastStopPlan;
+
+        if (plan === undefined || plan.actualStopTime <= switchAtSeconds) {
+            return;
+        }
+
+        this._lastStopPlan = {
+            ...plan,
+            actualStopTime: switchAtSeconds
+                + (plan.actualStopTime - switchAtSeconds) * ratio,
+        };
+    }
+
+    /**
+     * 以每格自我修正預計達到的停輪時刻改寫計畫（決議 45）。
+     *
+     * 提交時算的是「每格都走原速」的格線時刻；修正會把格子稍微拉長，
+     * 讓停輪落在目標上。僅供除錯讀取，不影響停輪。
+     */
+    public retimeStopPlan(actualStopTime: number): void {
+        const plan = this._lastStopPlan;
+
+        if (plan === undefined) {
+            return;
+        }
+
+        this._lastStopPlan = {
+            ...plan,
+            actualStopTime,
         };
     }
 
