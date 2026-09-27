@@ -134,10 +134,11 @@ export interface SlotMachineSpinConfig {
      * - 不等待各軸的 `startDelaySeconds`（全軸 0 秒啟動）
      * - **停止間隔為 0**：`stopTimings` 的 `stopDelaySeconds` 一律當 0，
      *   只保留停止**順序**（同一幀停下時回調照它發）
+     * - **全軸同一刻停**：資料到時全軸排到其中最晚的那一刻 —— 各軸
+     *   `targetStopSeconds` 不同時取最晚的；某軸盤面要多墊格、比較晚才能停
+     *   時，其他軸都等它。急停也是全軸一起縮短
      *
-     * 與 Cocos 移植版相同：它沒有 stopTimings，Turbo 各軸都在
-     * 0 + `targetStopSeconds` 停。要 Turbo 同時停，各軸的
-     * `targetStopSeconds` 也請填相同的值。
+     * 與 1016 相同（資料到時補牌數全盤取最大值）。
      */
     fastMode: boolean;
 

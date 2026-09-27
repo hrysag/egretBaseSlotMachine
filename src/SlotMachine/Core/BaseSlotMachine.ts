@@ -628,10 +628,16 @@ export class BaseSlotMachine extends eui.Component {
     }
 
     /**
-     * Turbo QuickStop：以所有啟動軸中最長的直接停止距離為共同目標。
+     * Turbo QuickStop：以所有作用軸中最長的直接停止距離為共同目標。
      *
      * 每格等寬之後單軸距離是純算術（見 BaseReel），差額用完整 Cell 的
      * 表演牌補足，不改變任何 Reel 的速度。
+     *
+     * 結果第一格已進場的軸不能再補（會插進結果中間，見
+     * ReelDataFlow.insertPerformanceCellsBeforeResult()），但**照樣列入共同
+     * 目標** —— 它縮不了，其他軸就補到跟它一起停（與 1016 相同：補牌數全盤取
+     * 最大值，不能補的軸也算進去）。排除它的話其他軸被砍短先停，Turbo 就不是
+     * 一起停了（[Turbo-QuickStop-Order.md](../../../doc/Turbo-QuickStop-Order.md) §7）。
      *
      * fastMode 下所有軸在同一個同步迴圈啟動，相位相同，差額必為偶數個
      * half-Cell。若各軸設了不同的 moveIntervalSeconds，相位會漂開而
@@ -649,24 +655,19 @@ export class BaseSlotMachine extends eui.Component {
             reel: BaseReel;
             reelIndex: number;
             halfCellCount: number;
+            canPad: boolean;
         }[] = [];
 
         for (const timing of this.getCurrentReelTimings()) {
             const reel = this._runtimeReels[timing.reelIndex];
             const result = resultByReel[timing.reelIndex];
 
-            /*
-             * 結果第一格已進場的軸不能再補（會插進結果中間，見
-             * ReelDataFlow.insertPerformanceCellsBeforeResult()），也就無從
-             * 同步；照原計畫停，不列入共同目標 —— 與普通模式的依序補格相同。
-             */
             if (
                 result === undefined
                 || (
                     reel.state !== ReelState.Rolling
                     && reel.state !== ReelState.Stopping
                 )
-                || !reel.canApplyQuickStopPadding
             ) {
                 continue;
             }
@@ -674,7 +675,8 @@ export class BaseSlotMachine extends eui.Component {
             projections.push({
                 reel,
                 reelIndex: timing.reelIndex,
-                halfCellCount: reel.calculateQuickStopHalfCellCount(),
+                halfCellCount: reel.calculateQuickStopRemainingHalfCells(),
+                canPad: reel.canApplyQuickStopPadding,
             });
         }
 
@@ -692,6 +694,10 @@ export class BaseSlotMachine extends eui.Component {
         }
 
         for (const projection of projections) {
+            if (!projection.canPad) {
+                continue;
+            }
+
             const difference =
                 commonHalfCellCount - projection.halfCellCount;
 
@@ -896,6 +902,9 @@ export class BaseSlotMachine extends eui.Component {
      * 以前只取基準停輪：伺服器晚於停輪時間到時各軸都被鉗到自己的最早時刻，
      * 軸間隔全部消失、先後在一格內隨機（Cocos 完成版相同）。
      *
+     * **Turbo（fastMode）**：推算完之後全軸改成其中最晚的那一刻，全軸同一刻停
+     * （[Turbo-QuickStop-Order.md](../../../doc/Turbo-QuickStop-Order.md) §7）。
+     *
      * 回傳陣列依停止順序排列 —— runListenSequence() 以此找「前一軸」。
      */
     private createCurrentStopTimings(
@@ -909,8 +918,10 @@ export class BaseSlotMachine extends eui.Component {
             stopOrder,
             startAtByReel,
         );
+        const originByIndex: number[] = [];
         let previousBaseStopTime = 0;
         let previousStopTime = 0;
+        let latestStopTime = 0;
 
         for (const timing of stopOrder) {
             const origin = this.getReelOrigin(
@@ -946,8 +957,31 @@ export class BaseSlotMachine extends eui.Component {
                 targetStopSeconds: Math.max(0, stopTime - origin),
                 moveIntervalSeconds: timing.moveIntervalSeconds,
             });
+            originByIndex.push(origin);
             previousBaseStopTime = baseStopTime;
             previousStopTime = stopTime;
+            latestStopTime = Math.max(latestStopTime, stopTime);
+        }
+
+        /*
+         * Turbo 全軸同一刻停（與 1016 相同：資料到時補牌數全盤取最大值）。
+         * 沿停止順序推算只會讓後面的軸等前面的 —— 某軸盤面要多墊格、或各軸
+         * targetStopSeconds 不同時，排在前面的軸不會等它。這裡全軸改成最晚
+         * 的那一刻；各軸目標相同，每格修正拉長的量也相同，格邊界不會錯開。
+         */
+        if (
+            this._currentSpinConfig !== undefined
+            && this._currentSpinConfig.fastMode === true
+        ) {
+            return result.map((timing, index) => ({
+                reelIndex: timing.reelIndex,
+                startDelaySeconds: timing.startDelaySeconds,
+                targetStopSeconds: Math.max(
+                    0,
+                    latestStopTime - originByIndex[index],
+                ),
+                moveIntervalSeconds: timing.moveIntervalSeconds,
+            }));
         }
 
         return result;

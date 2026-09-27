@@ -3432,6 +3432,100 @@ async function runMultiReelSection(): Promise<void> {
         );
     }
 
+    group("11w. Turbo 全軸同一刻停：資料到時排到最晚那一軸、急停一起縮短");
+
+    /*
+     * 與 1016 相同：資料到時補牌數全盤取最大值，不能補的軸也算進去。
+     * 以前沿停止順序推算，只有後面的軸會等前面的；急停又把結果已進場的軸
+     * 排除在共同目標外，其他軸被砍短先停（Turbo-QuickStop-Order.md §7）。
+     */
+    const sameFrame = (machine: HeadlessSlotMachine): boolean => {
+        const at = machine.stopLog.map((entry) => entry.at);
+        return machine.stopLog.length === 5
+            && Math.max(...at) - Math.min(...at) < 1e-9;
+    };
+
+    {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0, 0.9 + 0.1 * reelIndex)),
+            true,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.3);
+        machine.stopSpin(plainBoards);
+        check("Turbo 各軸目標不同：五軸都停下來了", await settleAll(machine), true);
+        check(
+            "Turbo 各軸目標不同：全軸同一幀停在最晚的目標（修正前各停各的）",
+            [sameFrame(machine), round2(stopAt(machine, 0))],
+            [true, 1.3],
+        );
+    }
+
+    /*
+     * 第 1 軸盤面底部是 7 的頭，要往退場端墊 2 格，最早能停比別軸晚。
+     * 目標填得比物理下限小，停輪由最早能停決定：修正前第 0 軸不等它先停。
+     */
+    const paddedBoards = [
+        boardOf([1, 2, 3]),
+        boardOf([1, 1, 7]),
+        boardOf([1, 2, 3]),
+        boardOf([1, 2, 3]),
+        boardOf([1, 2, 3]),
+    ];
+
+    {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0, 0.15)),
+            true,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.3);
+        machine.stopSpin(paddedBoards);
+        check("Turbo 某軸要多墊格：五軸都停下來了", await settleAll(machine), true);
+        check(
+            "Turbo 某軸要多墊格：排在它前面的軸也等它，全軸同一幀停",
+            sameFrame(machine),
+            true,
+        );
+    }
+
+    /*
+     * 同一盤面、結果送到後隔幾個時間點按急停：有的軸結果已進場（縮不了），
+     * 有的還能補。修正前縮不了的軸不列入共同目標，其他軸被砍短先停。
+     */
+    for (const quickStopAfter of [0.05, 0.1, 0.15, 0.2, 0.25]) {
+        const machine = createMachine(
+            5,
+            [0, 1, 2, 3, 4].map((reelIndex) => timing(reelIndex, 0, 0.15)),
+            true,
+        );
+
+        machine.startSpin("normal");
+        await advance(machine, 0.3);
+        machine.stopSpin(paddedBoards);
+        await advance(machine, quickStopAfter);
+        machine.quickStop();
+
+        const settled = await settleAll(machine);
+        check(
+            `Turbo 結果送到 ${quickStopAfter} 秒後急停：全軸同一幀停、盤面正確`,
+            [
+                settled,
+                sameFrame(machine),
+                machine.getAllVisibleSymbolIds(),
+            ],
+            [
+                true,
+                true,
+                paddedBoards.map((board) => board.map((data) => data.id)),
+            ],
+        );
+    }
+
     group("11o. 聽牌回調：有設定聽牌的軸一律成對發出");
 
     for (const [label, fastMode, quickStop] of [

@@ -1423,6 +1423,27 @@ export class BaseReel extends eui.Component {
     }
 
     /**
+     * 急停之後還要走幾個 half-Cell 才停（Turbo 同步補牌用）。
+     *
+     * 還能補格時就是 `calculateQuickStopHalfCellCount()`；結果已有格子進場、
+     * 不能再補的軸改看 strip 位置（`countHandoffsUntilStop()`）—— 它縮不了，
+     * 但要列入共同目標，其他軸才補得到跟它一起停。
+     */
+    public calculateQuickStopRemainingHalfCells(): number {
+        this.assertInitialized();
+
+        if (this.canApplyQuickStopPadding) {
+            return this.calculateQuickStopHalfCellCount();
+        }
+
+        const halfCells = this.countHandoffsUntilStop() * 2;
+
+        return this._iconManager.stripOffset > 0
+            ? halfCells - 1
+            : halfCells;
+    }
+
+    /**
      * 結果若現在送入，本軸最早能停在哪一刻（本軸時間）。
      *
      * 提交發生在下一個完整 Cell 邊界，之後結果要再走完進場距離：

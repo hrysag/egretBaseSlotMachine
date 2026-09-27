@@ -199,7 +199,7 @@
 
 ### 9.1 之後的工作另記
 
-- 滾動的修正（浮點收尾、空殼跟著轉、Turbo 急停反轉）→ [SESSION-2026-09-27-Rolling-Fixes.md](SESSION-2026-09-27-Rolling-Fixes.md)
+- 滾動的修正（浮點收尾、牌跟著空殼走、Turbo 急停反轉）→ [SESSION-2026-09-27-Rolling-Fixes.md](SESSION-2026-09-27-Rolling-Fixes.md)
 - 掉落模組的整理（Q1～Q4 已定案）→ [Drop-Module-Readiness.md](Drop-Module-Readiness.md) §7
 
 **Git**：本期所有改動都未 commit（決議 41～48、8 個缺陷修正、斷言 281 項、測試場景、doc）。尚未 commit／push／開 PR。

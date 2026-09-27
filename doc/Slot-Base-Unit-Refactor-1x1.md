@@ -580,9 +580,10 @@ const stripOffset    = travelled - cellsTravelled * cellPitch;   // ∈ [0, pitc
 > 兩個推論：① 滾動期間 `ReelIconLayout.index` 對同一個 Icon 是常數；② 一次交接會讓**多數槽位的內容換人**，不是只有被回收的那一格 —— 決議 34 的觸發頻率實測就是這個原因（§3.9）。
 > 掉落式的分割重排要兩條陣列一起動，屆時 `index` 才會真的變，所以它仍然每幀重推而不由 Icon 自己記住。
 
-#### 已修：空殼沒有跟著牌轉（2026-09-27）
+#### 已修：牌沒有跟著空殼走（2026-09-27）
 
-上面那段「Egret 版只轉 `_symbols`」是**修正前**的描述。現在空殼與資料一起轉（與 Cocos 版相同，`ReelIconManager.rotateExitedIconToEntry()`），
+上面那段「Egret 版只轉 `_symbols`」是**修正前**的描述。現在牌掛在空殼上、跟著空殼走：空殼一路帶著自己的牌移動，
+走出畫面後才搬回進場端換新牌，`_icons` 與 `_symbols` 一起轉（與 Cocos 版相同，`ReelIconManager.rotateExitedIconToEntry()`），
 `ReelIconLayout.index` 每次交接都會變。經過、驗算與斷言見 [SESSION-2026-09-27-Rolling-Fixes.md](SESSION-2026-09-27-Rolling-Fixes.md) §2。
 
 ### 2.10 掉落式（Drop）對位置模型的影響
