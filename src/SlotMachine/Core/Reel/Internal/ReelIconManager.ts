@@ -244,6 +244,45 @@ export class ReelIconManager {
     }
 
     /**
+     * 資料與空殼照同一個順序重排（掉落用；Drop-Module-Readiness §7.4 Q5）。
+     *
+     * `order[新索引] = 舊索引`，必須是 0～L-1 的排列。牌掛在空殼上、跟著
+     * 空殼走，所以兩條陣列一起動，配對不變；位置由索引重算，呼叫端要自己
+     * 用 `cellOffset` 補回畫面上的原位。
+     */
+    public reorderCells(order: number[]): void {
+        const length = this._symbols.length;
+
+        if (order.length !== length) {
+            throw new Error(
+                `reorderCells() requires ${length} indexes; received ${order.length}.`,
+            );
+        }
+
+        const seen: boolean[] = [];
+
+        for (const index of order) {
+            if (!Number.isInteger(index) || index < 0 || index >= length || seen[index]) {
+                throw new Error(
+                    "reorderCells() requires a permutation of the current indexes.",
+                );
+            }
+
+            seen[index] = true;
+        }
+
+        const symbols = order.map((index) => this._symbols[index]);
+        this._symbols.length = 0;
+        this._symbols.push(...symbols);
+
+        if (this._icons.length === length) {
+            const icons = order.map((index) => this._icons[index]);
+            this._icons.length = 0;
+            this._icons.push(...icons);
+        }
+    }
+
+    /**
      * 沒有下一筆資料時，仍把已出場的載體搬回進場端。
      *
      * 只整理 strip 結構，不更換資料 —— 否則退場端會堆積，

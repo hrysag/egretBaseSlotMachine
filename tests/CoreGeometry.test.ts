@@ -20,6 +20,8 @@ import { BaseReel } from "../src/SlotMachine/Core/Reel/BaseReel";
 import { ReelIconDirection } from "../src/SlotMachine/Core/Reel/Config/ReelIconDirection";
 import { ReelEffectConfig } from "../src/SlotMachine/Core/Reel/Config/ReelEffectConfig";
 import { BaseSlotMachine } from "../src/SlotMachine/Core/BaseSlotMachine";
+import { BaseDropReel } from "../src/SlotMachine/Drop/BaseDropReel";
+import { BaseDropSlotMachine } from "../src/SlotMachine/Drop/BaseDropSlotMachine";
 import { ReelState } from "../src/SlotMachine/Core/Reel/Runtime/ReelState";
 import {
     SlotMachineReelStopTiming,
@@ -3554,9 +3556,319 @@ async function runMultiReelSection(): Promise<void> {
 
 }
 
+// ────────── 12. 掉落雛形（Drop-Module-Readiness §7.4） ──────────
+
+/** 記錄換圖次數的空殼：牌掛在空殼上，只有換新牌的空殼會被 setData()。 */
+class CountingDropIcon extends BaseReelIcon {
+    public static dataChanges = 0;
+
+    protected onDataChanged(): void {
+        CountingDropIcon.dataChanges++;
+    }
+}
+
+function createDropReel(
+    visible: SymbolData[],
+    options: { inverseDirection?: boolean; visibleCellCount?: number } = {},
+): BaseDropReel {
+    const reel = new BaseDropReel();
+    reel.registerSymbolCells([
+        { symbolId: 1, cellSpan: 1 },
+        { symbolId: 2, cellSpan: 1 },
+        { symbolId: 3, cellSpan: 1 },
+        { symbolId: 4, cellSpan: 1 },
+        { symbolId: 6, cellSpan: 2 },
+        { symbolId: 7, cellSpan: 3 },
+    ]);
+    reel.init({
+        visibleCellCount: options.visibleCellCount !== undefined ? options.visibleCellCount : 3,
+        cellSize: CELL_SIZE,
+        moveInterval: 0.1,
+        inverseDirection: options.inverseDirection,
+    });
+    reel.setInitialLayout({
+        entryBuffer: fill(1, 3),
+        visible,
+        exitBuffer: fill(3, 3),
+    });
+    reel.configureIconDisplay({ iconFactory: () => new CountingDropIcon() });
+    return reel;
+}
+
+/** 推進單軸掉落；每步讓 promise 鏈走一格。 */
+async function advanceDrop(reel: BaseDropReel, seconds: number, step = 1 / 60): Promise<void> {
+    let remaining = seconds;
+
+    while (remaining > 1e-9) {
+        const slice = Math.min(step, remaining);
+        reel.update(slice);
+        remaining -= slice;
+        await flush();
+    }
+}
+
+class HeadlessDropMachine extends BaseDropSlotMachine {
+    public clock = 0;
+    public readonly startLog: { reelIndex: number; at: number }[] = [];
+
+    protected startTicking(): void {
+        // 測試自己推進。
+    }
+
+    protected registerInitialReelData(): void {
+        this.reelList.forEach((reel, reelIndex) => {
+            reel.registerSymbolCells([
+                { symbolId: 1, cellSpan: 1 },
+                { symbolId: 2, cellSpan: 1 },
+                { symbolId: 3, cellSpan: 1 },
+                { symbolId: 4, cellSpan: 1 },
+            ]);
+            reel.init({ visibleCellCount: 3, cellSize: CELL_SIZE, moveInterval: 0.1 });
+            reel.onDropStarted = () => {
+                this.startLog.push({ reelIndex, at: this.clock });
+            };
+        });
+    }
+
+    protected applyInitialLayout(): void {
+        for (const reel of this.reelList) {
+            reel.setInitialLayout({
+                entryBuffer: fill(1, 1),
+                visible: boardOf([1, 2, 3]),
+                exitBuffer: fill(3, 1),
+            });
+        }
+    }
+}
+
+async function advanceDropMachine(
+    machine: HeadlessDropMachine,
+    seconds: number,
+    step = 1 / 60,
+): Promise<void> {
+    let remaining = seconds;
+
+    while (remaining > 1e-9) {
+        const slice = Math.min(step, remaining);
+        machine.clock += slice;
+        machine.update(slice);
+        remaining -= slice;
+        await flush();
+    }
+}
+
+async function runDropSection(): Promise<void> {
+    group("12. 掉落雛形：消除補牌（1×1、垂直正向）");
+
+    {
+        const reel = createDropReel(boardOf([1, 2, 3]));
+        const first = reel.firstVisibleIndex;
+        const iconOfOne = reel.icons[first];
+        const iconOfTwo = reel.icons[first + 1];
+        const iconOfThree = reel.icons[first + 2];
+        const yBefore = iconOfOne.y;
+        let done = false;
+
+        CountingDropIcon.dataChanges = 0;
+        reel.startDropRefill([1], boardOf([4])).then(() => {
+            done = true;
+        });
+
+        check(
+            "開始那一刻：畫面位置不跳（1 還在原位）、只有換新牌的空殼 setData 一次",
+            [iconOfOne.y === yBefore, CountingDropIcon.dataChanges],
+            [true, 1],
+        );
+        check(
+            "掉落途中查詢回傳掉完之後的盤面（Q7）",
+            [reel.dropping, reel.getVisibleCellSymbolIds()],
+            [true, [4, 1, 3]],
+        );
+
+        await advanceDrop(reel, 0.05);
+        check(
+            "掉到一半：1 往退場端（+y）走了半格",
+            round2(iconOfOne.y - yBefore),
+            round2(reel.cellPitch / 2),
+        );
+        checkThrows("掉落途中再補牌 → throw（Q6）", () => {
+            reel.startDropRefill([0], boardOf([4]));
+        });
+        checkThrows("掉落途中重設盤面 → throw（Q6）", () => {
+            reel.setInitialLayout({
+                entryBuffer: fill(1, 3),
+                visible: boardOf([1, 2, 3]),
+                exitBuffer: fill(3, 3),
+            });
+        });
+
+        await advanceDrop(reel, 0.1);
+        check(
+            "掉完：1 下移一格；promise resolve；cellOffset 全歸零",
+            [
+                round2(iconOfOne.y - yBefore),
+                done,
+                reel.dropping,
+                reel.symbols.every((runtime) => runtime.cellOffset === 0),
+            ],
+            [round2(reel.cellPitch), true, false, true],
+        );
+        check(
+            "牌跟著空殼走：1 的空殼、3 的空殼沒換；被消掉的 2 的空殼換成新牌 4、搬到最上面",
+            [
+                reel.getVisibleIcons()[1] === iconOfOne,
+                reel.getVisibleIcons()[2] === iconOfThree,
+                reel.getVisibleIcons()[0] === iconOfTwo,
+                iconOfTwo.data !== undefined ? iconOfTwo.data.id : -1,
+                CountingDropIcon.dataChanges,
+            ],
+            [true, true, true, 4, 1],
+        );
+    }
+
+    group("12b. 大圖整組掉、整組消（Q1）");
+
+    {
+        const reel = createDropReel(
+            [symbol(6), symbol(1), symbol(2)],
+            { visibleCellCount: 4 },
+        );
+
+        reel.startDropRefill([3], boardOf([4])).then(() => undefined);
+        await advanceDrop(reel, 0.2);
+        check(
+            "消掉最下面的 2：1×2 的 6 整組往下掉一格，groupOffset 不變",
+            [
+                reel.getVisibleCellSymbolIds(),
+                reel.symbols
+                    .slice(reel.firstVisibleIndex, reel.firstVisibleIndex + 4)
+                    .map((runtime) => runtime.groupOffset),
+            ],
+            [[4, 6, 6, 1], [0, 0, 1, 0]],
+        );
+        checkThrows("只列大圖露出的其中一格 → throw", () => {
+            reel.startDropRefill([1], boardOf([4]));
+        });
+        checkThrows("補牌張數不等於消掉的格數 → throw", () => {
+            reel.startDropRefill([1, 2], boardOf([4]));
+        });
+        checkThrows("補進來的大圖不完整 → throw（雛形未支援截斷）", () => {
+            reel.startDropRefill([1, 2], boardOf([4, 7]));
+        });
+
+        reel.startDropRefill([1, 2], boardOf([6, 6])).then(() => undefined);
+        await advanceDrop(reel, 0.3);
+        check(
+            "整組消掉 6（兩格都列）、補一張完整的 6：4 往下掉兩格",
+            [
+                reel.getVisibleCellSymbolIds(),
+                reel.symbols
+                    .slice(reel.firstVisibleIndex, reel.firstVisibleIndex + 4)
+                    .map((runtime) => runtime.groupOffset),
+            ],
+            [[6, 6, 4, 1], [0, 1, 0, 0]],
+        );
+    }
+
+    group("12c. 反向（進場在下）：新牌從下面補進來");
+
+    {
+        /* 內部順序是進場端 → 退場端 = 下 → 上，所以畫面由上而下讀是 [3,2,1]。 */
+        const reel = createDropReel(boardOf([1, 2, 3]), { inverseDirection: true });
+
+        check("初始畫面（由上而下）", reel.getVisibleCellSymbolIds(), [3, 2, 1]);
+        reel.startDropRefill([0], boardOf([4])).then(() => undefined);
+        await advanceDrop(reel, 0.2);
+        check(
+            "消掉最上面的 3：2、1 往上掉一格，4 從下面進來",
+            reel.getVisibleCellSymbolIds(),
+            [2, 1, 4],
+        );
+    }
+
+    group("12d. 掉落機台：掉出、掉入、軸間隔、守門");
+
+    {
+        const machine = new HeadlessDropMachine();
+        machine.init(
+            [new BaseDropReel(), new BaseDropReel(), new BaseDropReel()],
+            { dropInIntervalSeconds: 0.2 },
+        );
+
+        let outDone = false;
+        machine.dropOut().then(() => {
+            outDone = true;
+        });
+        await advanceDropMachine(machine, 0.4);
+        check(
+            "掉出：三軸同時開始、掉完後可視區是空的",
+            [
+                outDone,
+                machine.startLog.map((entry) => round2(entry.at)),
+                machine.reelList.every((reel) => reel.droppedOut),
+            ],
+            [true, [0, 0, 0], true],
+        );
+
+        machine.startLog.length = 0;
+        const dropInAt = machine.clock;
+        const boards = [boardOf([4, 4, 4]), boardOf([2, 3, 4]), boardOf([1, 1, 2])];
+        let inDone = false;
+        machine.dropIn(boards).then(() => {
+            inDone = true;
+        });
+        checkThrows("掉落途中再下指令 → throw（Q6）", () => {
+            machine.dropRefill([[0], [], []], [boardOf([1]), [], []]);
+        });
+        await advanceDropMachine(machine, 1);
+        check(
+            "掉入：照 dropInIntervalSeconds 0.2 一軸接一軸開始、盤面正確",
+            [
+                inDone,
+                machine.startLog.map((entry) => round2(entry.at - dropInAt)),
+                machine.reelList.map((reel) => reel.getVisibleCellSymbolIds()),
+            ],
+            [true, [0, 0.2, 0.4], boards.map((board) => board.map((data) => data.id))],
+        );
+
+        machine.startLog.length = 0;
+        machine.dropOut(true).then(() => undefined);
+        await advanceDropMachine(machine, 0.4);
+        machine.startLog.length = 0;
+        machine.dropIn(boards, true).then(() => undefined);
+        await advanceDropMachine(machine, 0.4);
+        check(
+            "Turbo 掉入：不等間隔，三軸同時開始",
+            [
+                machine.startLog.length,
+                machine.startLog.every((entry) => entry.at === machine.startLog[0].at),
+            ],
+            [3, true],
+        );
+
+        let refillDone = false;
+        machine.dropRefill([[2], [], [0, 1]], [boardOf([2]), [], boardOf([3, 3])]).then(() => {
+            refillDone = true;
+        });
+        await advanceDropMachine(machine, 0.4);
+        check(
+            "補牌：沒有要消的軸略過，其他軸同時補",
+            [refillDone, machine.reelList.map((reel) => reel.getVisibleCellSymbolIds())],
+            [true, [[2, 4, 4], [2, 3, 4], [3, 3, 2]]],
+        );
+    }
+
+    {
+        const reel = new BaseDropReel();
+        const machine = new HeadlessDropMachine();
+        machine.init([reel], { adoptReels: false });
+        check("adoptReels: false：掉落軸留在原本的父層（Q11 暫定）", reel.parent === machine, false);
+    }
+}
+
 // ───────────────────────── 統計 ─────────────────────────
 
-runMultiReelSection().then(() => {
+runMultiReelSection().then(runDropSection).then(() => {
     console.log("\n" + "═".repeat(52));
     console.log(`  通過 ${passCount}　失敗 ${failCount}`);
     console.log("═".repeat(52));
