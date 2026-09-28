@@ -78,6 +78,12 @@ export class BaseSlotMachine extends eui.Component {
     private _lifecycleVersion = 0;
     private _listenReels: ListenReelConfig[] = [];
     private _activeReelIndexes: number[] = [];
+
+    /**
+     * 最近一輪有轉的軸。`_activeReelIndexes` 停輪時就清掉，
+     * 但停止效果要到之後才播完，`waitForSettledAsync()` 還要用。
+     */
+    private _lastSpinReelIndexes: number[] = [];
     private _currentResultByReel?: SymbolData[][];
 
     /** 心跳狀態。 */
@@ -327,6 +333,7 @@ export class BaseSlotMachine extends eui.Component {
             config,
             reelIndexes,
         );
+        this._lastSpinReelIndexes = [...this._activeReelIndexes];
         this._updateOrder = this.createUpdateOrder();
 
         const effectTimeScale = config.effectTimeScale !== undefined
@@ -716,6 +723,32 @@ export class BaseSlotMachine extends eui.Component {
         }
     }
 
+    /**
+     * 等待最近一輪有轉的軸**全部完全停下**：停輪，且停止效果播完。
+     *
+     * `stopSpin()` 在全部軸對齊結果那一刻就結束，停止效果（回彈）從那一刻
+     * 才開始播；要等回彈播完再接下一段表演時呼叫本方法。沒有停止效果的軸
+     * 對齊就算完成；還沒轉過任何一輪時立即結束。
+     *
+     * 必須在本輪停輪之後呼叫（`stopSpin()` resolve 之後），轉動中呼叫會 throw ——
+     * 那時還沒啟動的軸看起來是靜止的，會被誤判成已經停下。
+     */
+    public waitForSettledAsync(): Promise<void> {
+        this.assertInitialized();
+
+        if (this._spinning) {
+            throw new Error(
+                "waitForSettledAsync() must be called after the spin has stopped.",
+            );
+        }
+
+        return Promise.all(
+            this._lastSpinReelIndexes.map(
+                (reelIndex) => this._runtimeReels[reelIndex].waitForSettledAsync(),
+            ),
+        ).then(() => undefined);
+    }
+
     /** 取消尚未啟動的軸，並讓已啟動軸停在目前完整 Cell 邊界。 */
     public immediateStop(): void {
         this.assertInitialized();
@@ -768,6 +801,7 @@ export class BaseSlotMachine extends eui.Component {
         this._spinConfigs.clear();
         this._listenReels = [];
         this._activeReelIndexes = [];
+        this._lastSpinReelIndexes = [];
         this._runtimeReels = [];
         this._updateOrder = [];
         this.onReelStarted = undefined;

@@ -31,6 +31,14 @@ import {
     ReelIconCell,
     ReelIconLayout,
 } from "../src/SlotMachine/Core/Reel/Data/ReelData";
+import { RoundManagerMachines } from "../src/SlotMachine/Manager/BaseRoundManager";
+import { RollRoundManager } from "../src/SlotMachine/Manager/RollRoundManager";
+import { DropRoundManager } from "../src/SlotMachine/Manager/DropRoundManager";
+import {
+    RoundData,
+    RoundStage,
+    RoundStepContext,
+} from "../src/SlotMachine/Manager/Data/RoundData";
 
 /** 專案沒有裝 @types/node，只宣告本檔用得到的那一個。 */
 declare const process: { exit(code: number): void };
@@ -1588,6 +1596,7 @@ class HeadlessSlotMachine extends BaseSlotMachine {
         }[],
         private readonly _stopTimings?: SlotMachineReelStopTiming[],
         private readonly _startEffect?: ReelEffectConfig,
+        private readonly _stopEffect?: ReelEffectConfig,
     ) {
         super();
         this.onReelStarted = (reelIndex) => {
@@ -1631,6 +1640,7 @@ class HeadlessSlotMachine extends BaseSlotMachine {
                         : undefined,
                 moveInterval: this._timings[index].moveIntervalSeconds,
                 startEffect: this._startEffect,
+                stopEffect: this._stopEffect,
             });
             reel.setPerformanceDataBank(boardOf([1, 2, 3, 4]));
         });
@@ -1703,6 +1713,7 @@ function createMachine(
     geometry?: { maxCellSpan: number; visible: number }[],
     stopTimings?: SlotMachineReelStopTiming[],
     startEffect?: ReelEffectConfig,
+    stopEffect?: ReelEffectConfig,
 ): HeadlessSlotMachine {
     const machine = new HeadlessSlotMachine(
         timings,
@@ -1710,6 +1721,7 @@ function createMachine(
         geometry,
         stopTimings,
         startEffect,
+        stopEffect,
     );
     const reels: BaseReel[] = [];
 
@@ -3554,6 +3566,137 @@ async function runMultiReelSection(): Promise<void> {
         );
     }
 
+    group("11x. 全部完全停下：停止效果播完才結束（GameViewManager §9 G9）");
+
+    {
+        const bounce: ReelEffectConfig = {
+            enabled: true,
+            distance: 20,
+            outwardDuration: 0.1,
+            returnDuration: 0.1,
+        };
+        const machine = createMachine(
+            3,
+            [timing(0, 0, 0.5), timing(1, 0.1, 0.5), timing(2, 0.1, 0.5)],
+            false,
+            undefined,
+            undefined,
+            undefined,
+            bounce,
+        );
+        let effectCompletedCount = 0;
+        machine.reelList.forEach((reel) => {
+            reel.onStopEffectCompleted = () => {
+                effectCompletedCount++;
+            };
+        });
+
+        let settledBeforeSpin = false;
+        let reelSettledBeforeSpin = false;
+        machine.waitForSettledAsync().then(() => {
+            settledBeforeSpin = true;
+        });
+        machine.reelList[0].waitForSettledAsync().then(() => {
+            reelSettledBeforeSpin = true;
+        });
+        await flush();
+        check(
+            "還沒轉過任何一輪：機台與單軸都立即結束",
+            [settledBeforeSpin, reelSettledBeforeSpin],
+            [true, true],
+        );
+
+        machine.startSpin("normal");
+        checkThrows(
+            "轉動中呼叫會 throw（還沒啟動的軸看起來是靜止的）",
+            () => machine.waitForSettledAsync(),
+        );
+        await advance(machine, 0.25);
+
+        const board = boardOf([1, 2, 3]);
+        let stopped = false;
+        machine.stopSpin([board, board, board]).then(() => {
+            stopped = true;
+        });
+        await advanceUntil(machine, () => stopped);
+
+        let settled = false;
+        let settledAt = -1;
+        machine.waitForSettledAsync().then(() => {
+            settled = true;
+            settledAt = machine.clock;
+        });
+        await flush();
+
+        const lastStop = machine.stopLog[machine.stopLog.length - 1];
+        check(
+            "stopSpin() 結束時：最後一軸的停止效果還在播、還沒完全停下",
+            [machine.reelList[lastStop.reelIndex].stopEffectActive, settled],
+            [true, false],
+        );
+
+        await advanceUntil(machine, () => settled, 2);
+        check(
+            "完全停下時：三軸的停止效果都已播完",
+            machine.reelList.map((reel) => reel.stopEffectActive),
+            [false, false, false],
+        );
+        check(
+            "完全停下的時刻 = 最後一軸停下 + 停止效果長度 0.2 秒（容一格）",
+            Math.abs(settledAt - (lastStop.at + 0.2)) <= 1 / 60 + 1e-6,
+            true,
+        );
+        check(
+            "遊戲自己掛的 onStopEffectCompleted 照常收到（三軸各一次）",
+            effectCompletedCount,
+            3,
+        );
+    }
+
+    {
+        const machine = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+
+        machine.startSpin("normal");
+        await advance(machine, 0.25);
+
+        /* 滾動中就開始等：要靠停輪那一刻結束，不是事後查詢時的「已靜止」。 */
+        let reelSettled = false;
+        let reelSettledAt = -1;
+        machine.reelList[0].waitForSettledAsync().then(() => {
+            reelSettled = true;
+            reelSettledAt = machine.clock;
+        });
+
+        const board = boardOf([1, 2, 3]);
+        let stopped = false;
+        machine.stopSpin([board, board, board]).then(() => {
+            stopped = true;
+        });
+        await advanceUntil(machine, () => stopped);
+
+        const reel0Stop = machine.stopLog.find((entry) => entry.reelIndex === 0);
+        check(
+            "沒有停止效果：滾動中開始等的單軸，在它停輪那一幀就完全停下",
+            [reelSettled, reel0Stop !== undefined && reelSettledAt === reel0Stop.at],
+            [true, true],
+        );
+
+        let settled = false;
+        machine.waitForSettledAsync().then(() => {
+            settled = true;
+        });
+        await flush();
+        check(
+            "沒有停止效果：stopSpin() 結束後不必再推進時間就完全停下",
+            settled,
+            true,
+        );
+    }
+
 }
 
 // ────────── 12. 掉落雛形（Drop-Module-Readiness §7.4） ──────────
@@ -3864,11 +4007,579 @@ async function runDropSection(): Promise<void> {
         machine.init([reel], { adoptReels: false });
         check("adoptReels: false：掉落軸留在原本的父層（Q11 暫定）", reel.parent === machine, false);
     }
+
+    group("12e. 掉落急停：直接到位（GameViewManager §9 G6）");
+
+    {
+        const reel = createDropReel(boardOf([1, 2, 3]));
+        const iconOfOne = reel.icons[reel.firstVisibleIndex];
+        const yBefore = iconOfOne.y;
+        let completedCount = 0;
+        let done = false;
+
+        reel.onDropCompleted = () => {
+            completedCount++;
+        };
+        reel.quickStop();
+        check("沒在掉落時急停：不做事、不發通知", [reel.dropping, completedCount], [false, 0]);
+
+        reel.startDropRefill([1], boardOf([4])).then(() => {
+            done = true;
+        });
+        await advanceDrop(reel, 0.03);
+        reel.quickStop();
+        await flush();
+        check(
+            "單軸掉到一半急停：1 直接到下一格、cellOffset 全歸零、盤面正確",
+            [
+                round2(iconOfOne.y - yBefore),
+                reel.symbols.every((runtime) => runtime.cellOffset === 0),
+                reel.getVisibleCellSymbolIds(),
+            ],
+            [round2(reel.cellPitch), true, [4, 1, 3]],
+        );
+        check(
+            "單軸急停：掉落結束、promise resolve、onDropCompleted 發一次",
+            [reel.dropping, done, completedCount],
+            [false, true, 1],
+        );
+    }
+
+    {
+        const machine = new HeadlessDropMachine();
+        machine.init(
+            [new BaseDropReel(), new BaseDropReel(), new BaseDropReel()],
+            { dropInIntervalSeconds: 0.2 },
+        );
+        machine.dropOut(true).then(() => undefined);
+        await advanceDropMachine(machine, 0.4);
+
+        machine.startLog.length = 0;
+        const boards = [boardOf([4, 4, 4]), boardOf([2, 3, 4]), boardOf([1, 1, 2])];
+        let inDone = false;
+        machine.dropIn(boards).then(() => {
+            inDone = true;
+        });
+        await advanceDropMachine(machine, 0.05);
+        check("急停前：只有第 0 軸開始、後兩軸還在等間隔", machine.startLog.length, 1);
+
+        machine.quickStop();
+        await flush();
+        check(
+            "機台急停：還在等的軸立刻開始、三軸都直接到位、盤面正確",
+            [
+                machine.startLog.length,
+                machine.reelList.every((reel) => !reel.dropping),
+                machine.reelList.every((reel) =>
+                    reel.symbols.every((runtime) => runtime.cellOffset === 0)),
+                machine.reelList.map((reel) => reel.getVisibleCellSymbolIds()),
+            ],
+            [3, true, true, boards.map((board) => board.map((data) => data.id))],
+        );
+        check("機台急停：這批的 promise 照常 resolve", [machine.dropping, inDone], [false, true]);
+
+        let refillDone = false;
+        machine.dropRefill([[0], [], []], [boardOf([1]), [], []]).then(() => {
+            refillDone = true;
+        });
+        await advanceDropMachine(machine, 0.2);
+        check("急停之後可以接著下一個指令", refillDone, true);
+    }
+
+    group("12f. 掉落機台逐軸通知（GameViewManager §9 G5）");
+
+    {
+        const machine = new HeadlessDropMachine();
+        machine.init(
+            [new BaseDropReel(), new BaseDropReel(), new BaseDropReel()],
+            { dropInIntervalSeconds: 0.2 },
+        );
+        const log: { event: string; reelIndex: number; at: number }[] = [];
+        machine.onReelDropStarted = (reelIndex) => {
+            log.push({ event: "start", reelIndex, at: machine.clock });
+        };
+        machine.onReelDropCompleted = (reelIndex) => {
+            log.push({ event: "done", reelIndex, at: machine.clock });
+        };
+        const eventsOf = (event: string) =>
+            log.filter((entry) => entry.event === event);
+
+        machine.dropOut(true).then(() => undefined);
+        await advanceDropMachine(machine, 0.4);
+        log.length = 0;
+
+        const boards = [boardOf([4, 4, 4]), boardOf([2, 3, 4]), boardOf([1, 1, 2])];
+        const dropInAt = machine.clock;
+        machine.dropIn(boards).then(() => {
+            log.push({ event: "all", reelIndex: -1, at: machine.clock });
+        });
+        await advanceDropMachine(machine, 1);
+        check(
+            "掉入：逐軸開始照間隔 0.2、逐軸到位 = 開始 + 0.3（容一格）",
+            [
+                eventsOf("start").map((entry) => [entry.reelIndex, round2(entry.at - dropInAt)]),
+                eventsOf("done").map((entry) => entry.reelIndex),
+                eventsOf("done").every((entry, index) =>
+                    Math.abs(entry.at - dropInAt - (0.2 * index + 0.3)) <= 1 / 60 + 1e-6),
+            ],
+            [[[0, 0], [1, 0.2], [2, 0.4]], [0, 1, 2], true],
+        );
+        check(
+            "逐軸到位都在整批 promise resolve 之前",
+            log[log.length - 1].event,
+            "all",
+        );
+
+        log.length = 0;
+        machine.dropRefill([[2], [], [0, 1]], [boardOf([2]), [], boardOf([3, 3])])
+            .then(() => undefined);
+        await advanceDropMachine(machine, 0.4);
+        check(
+            "補牌：沒有要消的軸不發通知",
+            [
+                eventsOf("start").map((entry) => entry.reelIndex),
+                eventsOf("done").map((entry) => entry.reelIndex),
+            ],
+            [[0, 2], [0, 2]],
+        );
+
+        machine.dropOut(true).then(() => undefined);
+        await advanceDropMachine(machine, 0.4);
+        log.length = 0;
+        machine.dropIn(boards).then(() => undefined);
+        await advanceDropMachine(machine, 0.05);
+        machine.quickStop();
+        await flush();
+        check(
+            "急停：還在等的軸也發開始，三軸都發到位",
+            [
+                eventsOf("start").map((entry) => entry.reelIndex),
+                eventsOf("done").map((entry) => entry.reelIndex),
+            ],
+            [[0, 1, 2], [0, 1, 2]],
+        );
+    }
+}
+
+// ────────── 13. round 流程骨架（GameViewManager-Reference-Study §10） ──────────
+
+type RoundSource = () => Promise<RoundData<string> | null>;
+
+/** 共用的測試設定：round 來源、紀錄、以及要不要讓某個環節等「跳過」。 */
+interface RoundTestSetup {
+    readonly queue: RoundSource[];
+    readonly log: string[];
+    waitSkipAt?: RoundStage;
+    throwAt?: RoundStage;
+}
+
+function stageHook(
+    setup: RoundTestSetup,
+    stage: RoundStage,
+    context: RoundStepContext<string>,
+    extra: string,
+    manager: { skipResolve?: () => void },
+): Promise<void> {
+    setup.log.push(`${stage}:${context.round.state}:${context.stepIndex}${extra}`);
+
+    if (setup.throwAt === stage) {
+        return Promise.reject(new Error(`hook ${stage} failed`));
+    }
+
+    if (setup.waitSkipAt === stage) {
+        return new Promise<void>((resolve) => {
+            manager.skipResolve = resolve;
+        });
+    }
+
+    return Promise.resolve();
+}
+
+class TestRollManager extends RollRoundManager<string> {
+    public skipResolve?: () => void;
+
+    public constructor(
+        machines: RoundManagerMachines,
+        private readonly _setup: RoundTestSetup,
+    ) {
+        super(machines);
+    }
+
+    protected nextRound(): Promise<RoundData<string> | null> {
+        const next = this._setup.queue.shift();
+        return next !== undefined ? next() : Promise.resolve(null);
+    }
+
+    protected getSpinMode(round: RoundData<string> | null): string {
+        this._setup.log.push(`mode:${round === null ? "null" : round.state}`);
+        return "normal";
+    }
+
+    protected onRoundStart(context: RoundStepContext<string>): Promise<void> {
+        const spinning = (this.rollMachine as BaseSlotMachine).spinning;
+        return stageHook(this._setup, 1, context, spinning ? "(轉)" : "(停)", this);
+    }
+
+    protected onBeforeStep(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 2, context, "", this);
+    }
+
+    protected onStep(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 3, context, "", this);
+    }
+
+    protected onAfterStep(context: RoundStepContext<string>): Promise<void> {
+        const settled = (this.rollMachine as BaseSlotMachine).reelList
+            .every((reel) => !reel.stopEffectActive);
+        return stageHook(this._setup, 4, context, settled ? "" : "(回彈中)", this);
+    }
+
+    protected onRoundEnd(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 5, context, "", this);
+    }
+
+    protected onSkipRequested(stage: RoundStage): void {
+        this._setup.log.push(`skip:${stage}`);
+        if (this.skipResolve !== undefined) {
+            this.skipResolve();
+        }
+    }
+}
+
+class TestDropManager extends DropRoundManager<string> {
+    public skipResolve?: () => void;
+
+    public constructor(
+        machines: RoundManagerMachines,
+        private readonly _setup: RoundTestSetup,
+    ) {
+        super(machines);
+    }
+
+    protected nextRound(): Promise<RoundData<string> | null> {
+        const next = this._setup.queue.shift();
+        return next !== undefined ? next() : Promise.resolve(null);
+    }
+
+    protected onRoundStart(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 1, context, "", this);
+    }
+
+    protected onBeforeStep(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 2, context, "", this);
+    }
+
+    protected onStep(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 3, context, "", this);
+    }
+
+    protected onAfterStep(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 4, context, "", this);
+    }
+
+    protected onRoundEnd(context: RoundStepContext<string>): Promise<void> {
+        return stageHook(this._setup, 5, context, "", this);
+    }
+
+    protected onSkipRequested(stage: RoundStage): void {
+        this._setup.log.push(`skip:${stage}`);
+        if (this.skipResolve !== undefined) {
+            this.skipResolve();
+        }
+    }
+}
+
+/** 同時推進滾輪與掉落機台，直到條件成立或超時。 */
+async function driveUntil(
+    machines: { roll?: HeadlessSlotMachine; drop?: HeadlessDropMachine },
+    done: () => boolean,
+    limitSeconds = 12,
+    step = 1 / 60,
+): Promise<boolean> {
+    let spent = 0;
+
+    while (spent < limitSeconds) {
+        if (done()) {
+            return true;
+        }
+
+        if (machines.roll !== undefined) {
+            machines.roll.clock += step;
+            machines.roll.update(step);
+        }
+
+        if (machines.drop !== undefined) {
+            machines.drop.clock += step;
+            machines.drop.update(step);
+        }
+
+        spent += step;
+        await flush();
+    }
+
+    return done();
+}
+
+function createDropMachine(): HeadlessDropMachine {
+    const machine = new HeadlessDropMachine();
+    machine.init([new BaseDropReel(), new BaseDropReel(), new BaseDropReel()]);
+    return machine;
+}
+
+async function runRoundManagerSection(): Promise<void> {
+    group("13a. 滾輪 round：起轉早於資料、五個環節的順序、整局結束");
+
+    {
+        const bounce: ReelEffectConfig = {
+            enabled: true,
+            distance: 20,
+            outwardDuration: 0.1,
+            returnDuration: 0.1,
+        };
+        const roll = createMachine(
+            3,
+            [timing(0, 0, 0.5), timing(1, 0.1, 0.5), timing(2, 0.1, 0.5)],
+            false,
+            undefined,
+            undefined,
+            undefined,
+            bounce,
+        );
+        let giveFirst: (round: RoundData<string>) => void = () => undefined;
+        const firstRound = new Promise<RoundData<string>>((resolve) => {
+            giveFirst = resolve;
+        });
+        const ng = boardOf([1, 2, 3]);
+        const fg = boardOf([4, 4, 4]);
+        const setup: RoundTestSetup = {
+            queue: [
+                () => firstRound,
+                () => Promise.resolve({ state: "FG", board: [fg, fg, fg] }),
+            ],
+            log: [],
+        };
+        const manager = new TestRollManager({ roll }, setup);
+        const notices: string[] = [];
+        manager.onStageEnter = (stage) => {
+            notices.push(String(stage));
+        };
+        manager.onGameEnd = () => {
+            notices.push("end");
+        };
+
+        let done = false;
+        manager.startGame().then(() => {
+            notices.push("resolved");
+            done = true;
+        });
+        check(
+            "startGame() 一呼叫就起轉，還沒進任何環節",
+            [roll.spinning, manager.playing, manager.currentStage],
+            [true, true, undefined],
+        );
+        checkThrows("一局進行中再 startGame() → throw", () => {
+            manager.startGame();
+        });
+
+        await driveUntil({ roll }, () => false, 0.3);
+        check("資料還沒到：只起轉，沒有進環節", setup.log, ["mode:null"]);
+
+        giveFirst({ state: "NG", board: [ng, ng, ng] });
+        const finished = await driveUntil({ roll }, () => done);
+        check(
+            "兩個 round 的環節順序：NG 資料到時滾輪已在轉；FG 到環節 3 才起轉；環節 4 在回彈播完之後",
+            [finished, setup.log],
+            [
+                true,
+                [
+                    "mode:null",
+                    "1:NG:0(轉)", "2:NG:0", "3:NG:0", "4:NG:0", "5:NG:0",
+                    "1:FG:0(停)", "2:FG:0", "mode:FG", "3:FG:0", "4:FG:0", "5:FG:0",
+                ],
+            ],
+        );
+        check(
+            "通知：五個環節各發一次（兩個 round），整局結束在 startGame() resolve 之前",
+            notices,
+            ["1", "2", "3", "4", "5", "1", "2", "3", "4", "5", "end", "resolved"],
+        );
+        check(
+            "最後停在 FG 的盤面；結束後不在跑、不在任何環節",
+            [roll.getAllVisibleSymbolIds(), manager.playing, manager.currentStage],
+            [[[4, 4, 4], [4, 4, 4], [4, 4, 4]], false, undefined],
+        );
+    }
+
+    group("13b. 掉落 round：資料到才掉出、掉入；消除時 2～4 重複");
+
+    {
+        const drop = createDropMachine();
+        const boards = [boardOf([4, 4, 4]), boardOf([2, 3, 4]), boardOf([1, 1, 2])];
+        const setup: RoundTestSetup = {
+            queue: [
+                () => Promise.resolve({
+                    state: "NG",
+                    board: boards,
+                    cascades: [{
+                        removePositions: [[2], [], [0, 1]],
+                        refillCells: [boardOf([2]), [], boardOf([3, 3])],
+                    }],
+                }),
+            ],
+            log: [],
+        };
+        const manager = new TestDropManager({ drop }, setup);
+        let done = false;
+        manager.startGame().then(() => {
+            done = true;
+        });
+
+        const finished = await driveUntil({ drop }, () => done);
+        check(
+            "環節順序：1 → 初始盤面 2、3、4 → 第 1 次消除 2、3、4 → 5",
+            [finished, setup.log],
+            [
+                true,
+                ["1:NG:0", "2:NG:0", "3:NG:0", "4:NG:0", "2:NG:1", "3:NG:1", "4:NG:1", "5:NG:1"],
+            ],
+        );
+        check(
+            "盤面：掉入之後再消除補牌的結果",
+            drop.reelList.map((reel) => reel.getVisibleCellSymbolIds()),
+            [[2, 4, 4], [2, 3, 4], [3, 3, 2]],
+        );
+    }
+
+    group("13c. Stop 分流：滾輪急停、掉落直接到位、表演中通知遊戲跳過");
+
+    {
+        const roll = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+        let quickStops = 0;
+        const originalQuickStop = roll.quickStop.bind(roll);
+        roll.quickStop = () => {
+            quickStops++;
+            originalQuickStop();
+        };
+        const setup: RoundTestSetup = {
+            queue: [() => Promise.resolve({ state: "NG", board: [boardOf([1, 2, 3]), boardOf([1, 2, 3]), boardOf([1, 2, 3])] })],
+            log: [],
+        };
+        const manager = new TestRollManager({ roll }, setup);
+        let done = false;
+        manager.startGame().then(() => {
+            done = true;
+        });
+        manager.requestStop();
+        await driveUntil({ roll }, () => done);
+        check("滾輪在轉時按 Stop → 轉給滾輪機台 quickStop()", [quickStops, done], [1, true]);
+    }
+
+    {
+        const drop = createDropMachine();
+        let quickStops = 0;
+        const originalQuickStop = drop.quickStop.bind(drop);
+        drop.quickStop = () => {
+            quickStops++;
+            originalQuickStop();
+        };
+        const boards = [boardOf([4, 4, 4]), boardOf([2, 3, 4]), boardOf([1, 1, 2])];
+        const setup: RoundTestSetup = {
+            queue: [() => Promise.resolve({ state: "NG", board: boards })],
+            log: [],
+            waitSkipAt: RoundStage.AfterStep,
+        };
+        const manager = new TestDropManager({ drop }, setup);
+        let done = false;
+        manager.startGame().then(() => {
+            done = true;
+        });
+
+        await driveUntil({ drop }, () => drop.dropping, 1);
+        manager.requestStop();
+        check("掉落中按 Stop → 掉落機台 quickStop()、這一批直接到位", [quickStops, drop.dropping], [1, false]);
+
+        await driveUntil({ drop }, () => manager.currentStage === RoundStage.AfterStep, 3);
+        await driveUntil({ drop }, () => done, 0.5);
+        check("表演中（環節 4 在等）不會自己結束", done, false);
+
+        manager.requestStop();
+        const finished = await driveUntil({ drop }, () => done, 1);
+        check(
+            "表演中按 Stop → 呼叫遊戲的 onSkipRequested(4)，遊戲收尾後流程往下",
+            [finished, setup.log.filter((entry) => entry.startsWith("skip"))],
+            [true, ["skip:4"]],
+        );
+        check("沒在跑一局時按 Stop：不做事", (() => {
+            manager.requestStop();
+            return quickStops;
+        })(), 1);
+    }
+
+    group("13d. 出錯往外丟（G12）與守門");
+
+    {
+        const drop = createDropMachine();
+        const setup: RoundTestSetup = {
+            queue: [() => Promise.resolve({ state: "NG", board: [boardOf([1, 2, 3]), boardOf([1, 2, 3]), boardOf([1, 2, 3])] })],
+            log: [],
+            throwAt: RoundStage.BeforeStep,
+        };
+        const manager = new TestDropManager({ drop }, setup);
+        let gameEnded = false;
+        manager.onGameEnd = () => {
+            gameEnded = true;
+        };
+        let rejected = "";
+        manager.startGame().catch((error: Error) => {
+            rejected = error.message;
+        });
+        await driveUntil({ drop }, () => rejected !== "", 2);
+        check(
+            "環節丟錯 → startGame() reject、這一局停下、不發整局結束",
+            [rejected, manager.playing, gameEnded],
+            ["hook 2 failed", false, false],
+        );
+    }
+
+    {
+        const roll = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+        const board = boardOf([1, 2, 3]);
+        const setup: RoundTestSetup = {
+            queue: [() => Promise.resolve({
+                state: "NG",
+                board: [board, board, board],
+                cascades: [{ removePositions: [[0], [], []], refillCells: [boardOf([4]), [], []] }],
+            })],
+            log: [],
+        };
+        const manager = new TestRollManager({ roll }, setup);
+        let rejected = "";
+        manager.startGame().catch((error: Error) => {
+            rejected = error.message;
+        });
+        await driveUntil({ roll }, () => rejected !== "", 3);
+        check("round 有消除但沒給掉落機台 → reject", rejected, "A round with cascades requires a drop machine.");
+    }
+
+    checkThrows("RollRoundManager 沒給滾輪機台 → throw", () => {
+        new TestRollManager({}, { queue: [], log: [] });
+    });
+    checkThrows("DropRoundManager 沒給掉落機台 → throw", () => {
+        new TestDropManager({}, { queue: [], log: [] });
+    });
 }
 
 // ───────────────────────── 統計 ─────────────────────────
 
-runMultiReelSection().then(runDropSection).then(() => {
+runMultiReelSection().then(runDropSection).then(runRoundManagerSection).then(() => {
     console.log("\n" + "═".repeat(52));
     console.log(`  通過 ${passCount}　失敗 ${failCount}`);
     console.log("═".repeat(52));

@@ -26,6 +26,9 @@ import { DropReelConfig } from "./Config/DropReelConfig";
 interface GroupDrop {
     readonly movement: BaseMovement;
     readonly runtimes: ReelSymbolRuntime[];
+
+    /** 終點的 cellOffset；急停時直接放到這裡。 */
+    readonly to: number;
 }
 
 /**
@@ -40,7 +43,9 @@ interface GroupDrop {
  *   整組一起消（Q1）
  * - 補進來的新牌由遊戲層給，數量 = 畫面上消掉的格數（Q2）
  * - 資料與空殼一起重排：空殼帶著自己的牌往下掉，被消掉的空殼搬到進場端換新牌（Q5）
- * - 掉落途中再下指令或重設盤面 → throw；不做掉落急停（Q6）
+ * - 掉落途中再下指令或重設盤面 → throw（Q6）
+ * - 急停 `quickStop()`：直接到位，等同滾輪急停砍表演資料（Q6 原定不做，
+ *   2026-09-29 改為要做，GameViewManager-Reference-Study §9 G6）
  * - 位置由框架算：每組一條移動推它的 `cellOffset`，每幀一次推給全部空殼；
  *   掉落途中查詢回傳掉完之後的盤面（Q7）
  * - 每幀由掉落機台呼叫 `update()`（Q10）
@@ -346,6 +351,29 @@ export class BaseDropReel extends eui.Component {
         }
     }
 
+    /**
+     * 急停：這次掉落直接到位。
+     *
+     * 每組跳過剩下的移動、直接放到終點，照常發 `onDropCompleted`、
+     * resolve 掉落的 Promise，後續流程不變。沒在掉落時不做事。
+     */
+    public quickStop(): void {
+        if (!this._dropping) {
+            return;
+        }
+
+        for (const drop of this._drops) {
+            drop.movement.clear();
+
+            for (const runtime of drop.runtimes) {
+                runtime.cellOffset = drop.to;
+            }
+        }
+
+        this._iconManager.syncAllIcons();
+        this.completeDrop();
+    }
+
     // ───────────────── 查詢 ─────────────────
 
     public get inited(): boolean {
@@ -501,7 +529,7 @@ export class BaseDropReel extends eui.Component {
             }
         };
         movement.moveTo(to, duration, this._easing);
-        return { movement, runtimes };
+        return { movement, runtimes, to };
     }
 
     /**

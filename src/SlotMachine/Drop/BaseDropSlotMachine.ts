@@ -4,6 +4,7 @@ import { BaseDropReel } from "./BaseDropReel";
 import { DropSlotMachineConfig } from "./Config/DropSlotMachineConfig";
 
 interface PendingDropStart {
+    readonly reelIndex: number;
     readonly startAt: number;
     readonly start: () => Promise<void>;
 }
@@ -35,6 +36,17 @@ export class BaseDropSlotMachine extends eui.Component {
 
     private _ticking = false;
     private _lastTimeStamp = 0;
+
+    /**
+     * 單軸開始掉落時通知；這批裡沒有要掉的軸（例如補牌時沒有要消的軸）不發。
+     *
+     * 與 `BaseSlotMachine.onReelStarted` 同一種寫法。機台不佔用單軸自己的
+     * `onDropStarted` / `onDropCompleted`，那兩個留給遊戲。
+     */
+    public onReelDropStarted?: (reelIndex: number, reel: BaseDropReel) => void;
+
+    /** 單軸掉落到位時通知（包含急停直接到位）；在這批的 Promise resolve 之前發出。 */
+    public onReelDropCompleted?: (reelIndex: number, reel: BaseDropReel) => void;
 
     public get inited(): boolean {
         return this._inited;
@@ -121,6 +133,7 @@ export class BaseDropSlotMachine extends eui.Component {
     public dropOut(fastMode = false): Promise<void> {
         const interval = fastMode ? 0 : this._dropOutInterval;
         return this.run(this._reels.map((reel, index) => ({
+            reelIndex: index,
             startAt: index * interval,
             start: () => reel.startDropOut(),
         })));
@@ -135,6 +148,7 @@ export class BaseDropSlotMachine extends eui.Component {
         this.assertOnePerReel(boards, "dropIn()");
         const interval = fastMode ? 0 : this._dropInInterval;
         return this.run(this._reels.map((reel, index) => ({
+            reelIndex: index,
             startAt: index * interval,
             start: () => reel.startDropIn(boards[index]),
         })));
@@ -153,12 +167,35 @@ export class BaseDropSlotMachine extends eui.Component {
         this.assertOnePerReel(removePositions, "dropRefill()");
         this.assertOnePerReel(refillCells, "dropRefill()");
         return this.run(this._reels.map((reel, index) => ({
+            reelIndex: index,
             startAt: 0,
             start: () => reel.startDropRefill(
                 removePositions[index],
                 refillCells[index],
             ),
         })));
+    }
+
+    /**
+     * 急停：這批掉落直接到位（GameViewManager-Reference-Study §9 G6）。
+     *
+     * 還在等軸間隔的軸立刻開始，再讓全部軸直接放到終點；這批的 Promise
+     * 照常 resolve，後續流程不變。沒在掉落時不做事。
+     */
+    public quickStop(): void {
+        if (!this._running) {
+            return;
+        }
+
+        while (this._pendingStarts.length > 0) {
+            this.startOneReel(this._pendingStarts.shift() as PendingDropStart);
+        }
+
+        for (const reel of this._reels) {
+            reel.quickStop();
+        }
+
+        this.tryFinishRun();
     }
 
     // ───────────────── 心跳 ─────────────────
@@ -221,6 +258,8 @@ export class BaseDropSlotMachine extends eui.Component {
         this._pendingStarts = [];
         this._resolveRun = undefined;
         this._elapsed = 0;
+        this.onReelDropStarted = undefined;
+        this.onReelDropCompleted = undefined;
         this._inited = false;
     }
 
@@ -228,7 +267,8 @@ export class BaseDropSlotMachine extends eui.Component {
 
     /**
      * 排程一批掉落：時間 0 的軸當場開始，其餘由 update() 依時間開始；
-     * 全部開始、也全部掉完才 resolve。途中再下指令 → throw（Q6）。
+     * 全部開始、也全部掉完才 resolve。途中再下指令 → throw（Q6）；
+     * 要提早結束用 `quickStop()`。
      */
     private run(starts: PendingDropStart[]): Promise<void> {
         this.assertInitialized();
@@ -265,9 +305,33 @@ export class BaseDropSlotMachine extends eui.Component {
             this._pendingStarts.length > 0
             && this._pendingStarts[0].startAt <= this._elapsed + 1e-9
         ) {
-            const pending = this._pendingStarts.shift() as PendingDropStart;
-            void pending.start();
+            this.startOneReel(this._pendingStarts.shift() as PendingDropStart);
         }
+    }
+
+    /**
+     * 開始一軸並轉發它的開始／到位通知。
+     *
+     * 到位用單軸掉落的 Promise 得知：它先於這批的 Promise resolve，
+     * 所以逐軸到位的通知一定在整批結束之前。
+     */
+    private startOneReel(pending: PendingDropStart): void {
+        const reel = this._reels[pending.reelIndex];
+        const dropped = pending.start();
+
+        if (!reel.dropping) {
+            return;
+        }
+
+        if (this.onReelDropStarted !== undefined) {
+            this.onReelDropStarted(pending.reelIndex, reel);
+        }
+
+        void dropped.then(() => {
+            if (this.onReelDropCompleted !== undefined) {
+                this.onReelDropCompleted(pending.reelIndex, reel);
+            }
+        });
     }
 
     /** 全部開始、也全部掉完就結束這批。 */

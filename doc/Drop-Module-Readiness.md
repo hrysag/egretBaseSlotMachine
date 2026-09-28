@@ -273,6 +273,10 @@ v3 `UniDropReel.startDropRefill()` 的步驟：被消掉的 Icon 搬到畫面上
 （`ProcessSlotData1024.getWinRemoveDataForGame()` / `getReFillDataForGame()`；`TestMain` 註解的例子
 `[[1,3,5],[3],[1,2]…]` 對 `[[0,0,5],[6],[10,3]…]`）。
 
+> **更正（2026-09-28）**：這兩份**不是伺服器直接給的**，是 1024 遊戲層解析器的產物。伺服器只送初始盤面 + 一串補牌符號；
+> `ProcessSlotData1024.processByteAfterDecodeBuffer()` 自己算中獎、以中獎格為消除格、再從補牌串取新牌。
+> 結論（新牌張數 = 畫面上消掉的格數）不受影響。框架只定資料樣式、由遊戲層轉手，見 [GameViewManager-Reference-Study.md](GameViewManager-Reference-Study.md) §9 G4。
+
 | 牌 | 來源 |
 |---|---|
 | 原本就在畫面上、位置比消除處高的牌 | 不換內容，只往下掉 |
@@ -329,7 +333,10 @@ server 給 2 張新牌 → 從上方掉進畫面前 2 格
 - 掉落軸自己持有一個「掉落中」旗標，**不新增 `ReelState`**（掉落軸不繼承 `BaseReel`，用不到滾動的狀態）
 - 掉落途中再下掉落指令、或重設盤面 → **直接 throw**，與滾動「轉動中再 `startSpin()` 就 throw」同一種做法
 - 遊戲層以 `await` 等掉落結束再做下一步
-- **不做掉落急停**（跳過動畫直接到位）；v3 也沒有，之後有需求再加
+- ~~**不做掉落急停**（跳過動畫直接到位）；v3 也沒有，之後有需求再加~~
+  → **2026-09-28 改為要做**（討論流程層 Stop 按鈕時定案，見 [GameViewManager-Reference-Study.md](GameViewManager-Reference-Study.md) §9 G6）：
+  掉落中（掉入或消除補牌）按 Stop，**所有還在掉、或還在等開始的牌直接跳到最終位置**，等同滾輪急停砍表演資料；
+  各軸照常發掉落完成通知、Promise 照常 resolve，後續流程不變。**已實作（2026-09-29）**：`BaseDropReel.quickStop()` / `BaseDropSlotMachine.quickStop()`
 
 依據：v3 `UniDropReel` 完全沒擋 —— 掉落途中再呼叫，`waitForDropComplete` 被新的 resolve 蓋掉，第一次的 `await` 永遠不會結束；
 `moveBy()` 疊在還沒走完的指令後面，牌走到錯的位置。
@@ -452,7 +459,7 @@ strip 長度與 Icon 數量固定（主線 §2.0）。要不要支援「每輪�
 | `ReelIconManager.reorderCells()` | Core 唯一新增：資料與空殼照同一個順序重排 |
 
 - 與滾動共用 strip 模型（`ReelIconManager`），牌一律往退場端掉；每組一條 `BaseMovement` 推 `cellOffset`，等速不等時（掉 n 格花 n × moveInterval）
-- 已照定案實作：Q1（畫面位置、整組列齊）、Q2（新牌張數 = 消掉的格數）、Q5（一起重排）、Q6（途中 throw、無急停）、Q7（位置由框架推、查詢回傳掉完的盤面）、Q10（機台推）、Q11 暫定（`adoptReels`）
+- 已照定案實作：Q1（畫面位置、整組列齊）、Q2（新牌張數 = 消掉的格數）、Q5（一起重排）、Q6（途中 throw；當時定「無急停」，2026-09-28 改為要做「直接到位」，2026-09-29 已實作 `quickStop()`）、Q7（位置由框架推、查詢回傳掉完的盤面）、Q10（機台推）、Q11 暫定（`adoptReels`）
 - 軸間隔照 v3：掉出、掉入各一個間隔，Turbo 不等；補牌全軸同時
 - 斷言 294 → **314**（§12～12d，20 項）；讓重排時空殼不跟著動，紅 4 項
 

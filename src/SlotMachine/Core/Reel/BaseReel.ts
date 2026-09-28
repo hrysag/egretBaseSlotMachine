@@ -175,6 +175,11 @@ export class BaseReel extends eui.Component {
 
     private _resolveStopPromise?: () => void;
 
+    /** 「完全停下」= 停輪且停止效果播完；沒有停止效果時停輪即完成。 */
+    private _settlePromise?: Promise<void>;
+
+    private _resolveSettlePromise?: () => void;
+
     private _state = ReelState.Idle;
 
     private _stopMode = ReelStopMode.ResultAligned;
@@ -749,8 +754,12 @@ export class BaseReel extends eui.Component {
 
         if (stopEffectCompleted) {
             this.syncVisualEffectOffset();
-            if (this.onStopEffectCompleted !== undefined) {
-                this.onStopEffectCompleted();
+            try {
+                if (this.onStopEffectCompleted !== undefined) {
+                    this.onStopEffectCompleted();
+                }
+            } finally {
+                this.resolveSettlePromise();
             }
         }
 
@@ -1292,6 +1301,11 @@ export class BaseReel extends eui.Component {
             }
         } finally {
             this.resolveStopPromise();
+
+            /* 沒有停止效果可播時，停輪這一刻就是完全停下。 */
+            if (!this._stopEffect.active) {
+                this.resolveSettlePromise();
+            }
         }
     }
 
@@ -1799,6 +1813,39 @@ export class BaseReel extends eui.Component {
         }
     }
 
+    /**
+     * 等待本軸完全停下：停輪，且停止效果播完。
+     *
+     * 與 `waitForStoppedAsync()` 的差別：那個在對齊結果的那一刻就結束，
+     * 停止效果從那一刻才開始播；這個等到效果回到正式停止位置。
+     * 沒有停止效果（未啟用、或非結果對齊的停止）時兩者同時結束。
+     * 本軸不在滾動、也沒有停止效果在播時立即結束（包含從未啟動過）。
+     */
+    public async waitForSettledAsync(): Promise<void> {
+        this.assertInitialized();
+
+        if (!this.isActive() && !this._stopEffect.active) {
+            return;
+        }
+
+        if (this._settlePromise === undefined) {
+            this._settlePromise = new Promise<void>((resolve) => {
+                this._resolveSettlePromise = resolve;
+            });
+        }
+
+        await this._settlePromise;
+    }
+
+    private resolveSettlePromise(): void {
+        const resolve = this._resolveSettlePromise;
+        this._resolveSettlePromise = undefined;
+        this._settlePromise = undefined;
+        if (resolve !== undefined) {
+            resolve();
+        }
+    }
+
     private resetMovement(): void {
         this._movement.clear();
         this._movement.setValue(0);
@@ -1807,6 +1854,7 @@ export class BaseReel extends eui.Component {
 
     private resetSpinData(): void {
         this.resolveStopPromise();
+        this.resolveSettlePromise();
         this._startEffect.reset();
         this._dataFlow.beginSpin();
         this._stopFlow.beginSpin();
@@ -1825,6 +1873,7 @@ export class BaseReel extends eui.Component {
 
     private resetRuntimeData(): void {
         this.resolveStopPromise();
+        this.resolveSettlePromise();
         this._startEffect.reset();
         this._stopEffect.reset();
         this._movement.clear();
@@ -1848,6 +1897,7 @@ export class BaseReel extends eui.Component {
         this._movement.onQueueComplete = undefined;
         this._movement.setValue(0);
         this.resolveStopPromise();
+        this.resolveSettlePromise();
         this._startEffect.cleanup();
         this._stopEffect.cleanup();
 

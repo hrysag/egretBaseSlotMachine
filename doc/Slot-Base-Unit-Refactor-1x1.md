@@ -2249,6 +2249,7 @@ node temp/tests/tests/CoreGeometry.test.js
 - **聽牌（決議 42）待實作**：`speedMultiplier` 目前把 `duration` 一起除掉。修法已定案並驗算（`planned`：規劃時算目標與切速邊界，2,880 組零晚停、零順序違反）。「高於普通就不排聽牌時間」靠 Lv1／Lv2 的 SpinConfig 設 `fastMode: true` 達成，由遊戲層每次開轉以 `startSpin(mode)` 送入（已確認，1016 對應物見 §3.8）。完整依據見 §3.8。
 
 - **機台層缺「完全停」的出口**：Reel 層有 `onStopEffectCompleted`，`BaseSlotMachine` 卻整檔零次提到 `stopEffect` —— 機台只轉出「資料到定位」那一則。1016 為此手工轉了四層（`UniReel1016._endBouncePromise` → View → SlotMachine → `GameViewManager1016._waitReelBounceTask`），用來卡 wild 表演與聽牌特效的時序。**要不要做沒有疑問，未定的是形狀**（新增機台 callback 還是給 `BaseReel` 一個 `waitForStopEffectAsync()`）。完整依據見 §3.8。
+  → **形狀已定案（2026-09-28）**：`stopSpin()` 語意不變（全部對齊即 resolve）；`BaseSlotMachine` 另補一個等待入口，這一輪有轉的軸全部播完停止效果才結束，沒有停止效果的軸對齊就算完成。**已實作（2026-09-29）**：`BaseSlotMachine.waitForSettledAsync()` / `BaseReel.waitForSettledAsync()`。見 [GameViewManager-Reference-Study.md](GameViewManager-Reference-Study.md) §9 G9。
 
 - **`reconfigureStoppedLayout()` 的展開行為**：1×1 展開成 1×N 時，多出來的格子從哪裡取、原本那些 runtime 的 `groupOffset` 怎麼重算，還沒設計。目前只能手寫整條對齊的三段盤面，且大 Symbol 不得跨越 buffer／可視區邊界（§3.1 的約束），所以「某一格就地展開」這個使用情境實際上要由遊戲層重算整條 strip 才寫得出來。
 
