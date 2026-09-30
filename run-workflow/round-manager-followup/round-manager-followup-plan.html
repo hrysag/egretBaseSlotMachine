@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Round Manager Followup Plan</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Round Manager Followup Plan</h1>
+    <p>Source: round-manager-followup-plan.md</p>
+    <p>Generated: 2026-10-01 01:54:41</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#核心程式改寫成符合-egret-規範-implementation-plan">核心程式改寫成符合 Egret 規範 Implementation Plan</a></li>
+<li class="level-2"><a href="#global-constraints">Global Constraints</a></li>
+<li class="level-2"><a href="#驗證工具">驗證工具</a></li>
+<li class="level-2"><a href="#review-focus">Review Focus</a></li>
+<li class="level-2"><a href="#task-1namespace-化">Task 1：namespace 化</a></li>
+<li class="level-2"><a href="#task-2自訂事件與機台介面">Task 2：自訂事件與機台介面</a></li>
+<li class="level-2"><a href="#task-3icon-與-basedropreel-主動讀值">Task 3：Icon 與 `BaseDropReel` 主動讀值</a></li>
+<li class="level-2"><a href="#task-4manager-改寫">Task 4：Manager 改寫</a></li>
+<li class="level-2"><a href="#task-5其他規範修正coredrop">Task 5：其他規範修正（Core、Drop）</a></li>
+<li class="level-2"><a href="#task-6測試場景生命週期與最終驗證">Task 6：測試場景生命週期與最終驗證</a></li>
+<li class="level-2"><a href="#task-7重寫斷言tests-2026-10-01-code-review-後追加待使用者確認做法">Task 7：重寫斷言（`tests/`）—— 2026-10-01 code review 後追加，待使用者確認做法</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="核心程式改寫成符合-egret-規範-implementation-plan">核心程式改寫成符合 Egret 規範 Implementation Plan</h1>
+
+<blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+
+<p><strong>Goal:</strong> 把 <code>src/SlotMachine/<strong></code>、<code>src/test/</strong></code> 改寫成符合 Egret 規範（namespace、自訂事件、介面注入、<code>init</code>／<code>cleanup</code>、無匿名函式、TS 2.4.2 語法），行為不變。</p>
+
+<p><strong>Architecture:</strong> 四個 namespace（<code>slot_core</code>、<code>slot_drop</code>、<code>slot_manager</code>、<code>slot_test</code>）取代 ES module；跨模組通知改成 <code>egret.Event</code> 子類別，同模組回呼保留；manager 以介面收機台；icon 以 <code>iconClass</code>／<code>iconSkinName</code> 字串建立。</p>
+
+<p><strong>Tech Stack:</strong> Egret 5.4.1、TypeScript 2.4.2（型別檢查）、webpack <code>legacy</code> 模式打包（<code>scripts/config.ts</code>，不動）</p>
+
+<p><strong>Spec:</strong> [round-manager-followup-spec.md](round-manager-followup-spec.md)</p>
+
+<h2 id="global-constraints">Global Constraints</h2>
+
+<ul>
+<li>規範：<code>~/.claude/skills/game-implementation-boundary/engines/egret/</code> 全部照做，不以專案現況例外</li>
+<li>範圍：只改 <code>src/SlotMachine/<strong></code>、<code>src/test/</strong></code>、<code>Main.ts</code> 的 <code>import</code> 那一行；<strong>不動</strong> <code>AssetAdapter.ts</code>、<code>LoadingUI.ts</code>、<code>Platform.ts</code>、<code>ThemeAdapter.ts</code>、<code>EgretToolchainShim.d.ts</code>、<code>Main.ts</code> 其他內容、<code>tests/<strong></code>、<code>scripts/</strong></code></li>
+<li>不寫任何 <code>import</code>／<code>export</code> 陳述式（namespace 內的 <code>export</code> 成員宣告除外）；跨 namespace 寫完整名稱，不用 <code>import X = …</code> 別名</li>
+<li>TS 2.4.2 語法：無 <code>unknown</code>、<code>?.</code>、<code>??</code>、<code>field!:</code>、<code>as const</code>、<code>readonly T[]</code></li>
+<li>Map／Set：只用建構、<code>get</code>／<code>set</code>／<code>has</code>／<code>delete</code>／<code>clear</code>／<code>size</code>／<code>forEach</code>；不用 <code>keys()</code>／<code>values()</code>／<code>entries()</code>／<code>Array.from(map/set)</code>／<code>for...of</code> 走訪 Map／Set</li>
+<li><code>strict</code>：參數標型別；<code>null</code>／<code>undefined</code> 寫進型別；欄位給初始值或型別寫 <code>T | null</code></li>
+<li>不直接寫匿名函式：一律具名方法或具名欄位（型別宣告裡的 <code>=&gt;</code> 不算）</li>
+<li>不隨手 <code>as</code> 轉型；一個參數一行；<code>throw new Error(</code> 換行再寫訊息</li>
+<li>換行：沿用各檔原本的換行（<code>Core</code> 內 <code>BaseSlotMachine.ts</code>、<code>BaseReel.ts</code> 是 CRLF；<code>Drop/</code>、<code>Manager/</code> 是 LF）</li>
+<li><code>egret build</code> 會改寫根目錄 <code>manifest.json</code> 的換行，build 後若 <code>git status</code> 顯示它被改，<code>git checkout -- manifest.json</code> 還原</li>
+<li><strong>不 commit</strong>：每個階段結束寫 checkpoint，等使用者同意才進下一階段；commit 只在使用者要求時做</li>
+</ul>
+
+<h2 id="驗證工具">驗證工具</h2>
+
+<div class="table-wrap"><table><thead><tr><th>用途</th><th>指令</th><th>通過</th></tr></thead><tbody><tr><td>TS 2.4.2 型別檢查</td><td><code>node run-workflow/round-manager-followup/check-ts242.js</code></td><td>最後一行 <code>TypeScript 2.4.2 - 0 error(s)</code>，exit 0</td></tr><tr><td>打包</td><td><code>EGRET_PATH=D:/Egret_test/egret-core-master/egret-core-master node D:/Egret_test/egret-core-master/egret-core-master/tools/bin/egret build</code>（Git Bash；不設 <code>EGRET_PATH</code> 會報 <code>can&#x27;t find Egret</code>）</td><td>無錯誤；產出 <code>bin-debug/</code></td></tr><tr><td>瀏覽器</td><td><code>preview_start { name: &quot;slot-debug&quot; }</code>（<code>scripts/static-server.js</code> 端 <code>bin-debug/</code>，port 5321）</td><td>測試場景顯示、console 無錯誤</td></tr></tbody></table></div>
+
+<p><strong>基準（改寫前，2026-09-30 實測）</strong>：<code>check-ts242.js</code> 8 個錯誤 —— 7 個 <code>Cannot find name &#x27;unknown&#x27;</code>（<code>BaseDropSlotMachine</code>、<code>Manager/</code> 各檔），1 個 <code>ReelAxisEffect.ts</code> TS7017（緩動表以 enum 當索引）。</p>
+
+<p><strong>斷言</strong>：<code>tests/</code> 本輪略過，無法執行；本計畫沒有自動化單元測試，每個 Task 以型別檢查 + 搜尋檢查 + （指定的 Task）瀏覽器確認驗證。</p>
+
+<h2 id="review-focus">Review Focus</h2>
+
+<ol>
+<li><strong>namespace 載入順序</strong>：webpack <code>legacy</code> 模式靠 <code>sortUnmodules()</code> 排序；子類別（例 <code>TestSlotMachine extends slot_core.BaseSlotMachine</code>）若先於父類別執行會在瀏覽器報 <code>Cannot read property &#x27;prototype&#x27; of undefined</code>。Task 1 結束必須在瀏覽器確認場景能開</li>
+<li><strong>事件時機</strong>：回呼改事件後，發送順序必須與原本相同 —— <code>DropEvent.DROP_COMPLETED</code> 在 resolve 掉落 Promise 之前；<code>RoundEvent.GAME_END</code> 在 <code>startGame()</code> resolve 之前；<code>SlotMachineEvent.REEL_STOPPED</code> 在同一幀原位置。Task 2 逐一對照原呼叫點，只換呼叫、不移位置</li>
+<li><strong>重複 <code>init()</code></strong>：<code>BaseReel.init()</code> 可在非滾動時再次呼叫；新加 <code>_inited</code> 的內部類別（<code>BaseMovement</code>、<code>ReelStopFlow</code>）第二次 <code>init()</code> 必須不壞流程。Task 5 規定行為</li>
+<li><strong><code>cleanup()</code> 後再 <code>init()</code></strong>：manager、測試場景 <code>cleanup()</code> 必須移除全部監聽；再 <code>init()</code> 不得重複註冊（引擎同一組 listener+thisObject 本就不重複，但 <code>removeEventListener</code> 參數必須與 add 相同）</li>
+<li><strong><code>iconClass</code> 填錯</strong>：找不到類別、或類別不是 <code>BaseReelIcon</code> 系列 → <code>configureIconDisplay()</code>／建立空殼時 throw，訊息含類別名稱，不可默默建成 <code>BaseReelIcon</code></li>
+</ol>
+
+<p>---</p>
+
+<h2 id="task-1namespace-化">Task 1：namespace 化</h2>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Modify: <code>src/SlotMachine/Core/**/*.ts</code>（21 檔）→ <code>namespace slot_core</code></li>
+<li>Modify: <code>src/SlotMachine/Drop/**/*.ts</code>（4 檔）→ <code>namespace slot_drop</code></li>
+<li>Modify: <code>src/SlotMachine/Manager/**/*.ts</code>（4 檔）→ <code>namespace slot_manager</code></li>
+<li>Modify: <code>src/test/*.ts</code>（4 檔）→ <code>namespace slot_test</code></li>
+<li>Modify: <code>src/Main.ts</code>：刪除 <code>import { SlotMachineScene } from &quot;./test/SlotMachineScene&quot;;</code>，<code>new SlotMachineScene()</code> → <code>new slot_test.SlotMachineScene()</code></li>
+</ul>
+
+<p><strong>Interfaces:</strong></p>
+<ul>
+<li>Produces：所有既有匯出名稱改成 namespace 成員，名稱不變。例：<code>slot_core.BaseSlotMachine</code>、<code>slot_core.BaseReel</code>、<code>slot_core.SymbolData</code>、<code>slot_core.SpinMode</code>、<code>slot_drop.BaseDropSlotMachine</code>、<code>slot_manager.BaseRoundManager</code>、<code>slot_test.SlotMachineScene</code></li>
+</ul>
+
+<ul>
+<li>[x] <strong>Step 1：每檔改寫</strong></li>
+<li>刪除全部 <code>import …</code> 行</li>
+<li>整檔內容包進 <code>namespace slot_&lt;模組&gt; { … }</code>（縮排加一層）</li>
+<li>原本 <code>export</code> 的宣告保留 <code>export</code>（成為 namespace 成員）；原本未匯出的常數／函式維持不匯出</li>
+<li>同模組名稱直接用；跨模組改完整名稱（<code>slot_drop</code>、<code>slot_manager</code>、<code>slot_test</code> 內引用 core 的名稱寫 <code>slot_core.Xxx</code>）</li>
+<li><code>slot_core</code> 內不得出現 <code>slot_drop.</code>、<code>slot_manager.</code>、<code>slot_test.</code>；<code>slot_drop</code> 內不得出現 <code>slot_manager.</code>、<code>slot_test.</code></li>
+<li>[x] <strong>Step 2：<code>BaseReel.ts</code> 轉匯出</strong>：刪除開頭 <code>export { … } from &quot;…&quot;;</code> 共 6 組（<code>ReelIconDirection</code>、<code>SymbolData</code>、<code>SymbolVisualSize</code>、<code>ReelSymbolCellDefinition</code>、<code>ReelExpediteReason</code>、<code>ReelStopPlan</code>、<code>ReelStopPlanInput</code> 等）；原本從 <code>BaseReel</code> 匯入這些名稱的檔案，同模組直接寫名稱、跨模組寫 <code>slot_core.Xxx</code></li>
+<li>[x] <strong>Step 3：<code>Main.ts</code></strong>：只改 spec §4 那兩處，其他不動（Main.ts 註解提到 <code>import</code> 的那段不改）</li>
+<li>[x] <strong>Step 4：搜尋檢查</strong></li>
+<li><code>rg -n &quot;^\s*(import|export)\s&quot; src/SlotMachine src/test src/Main.ts</code> → 只剩 namespace 內縮排的 <code>export class|interface|enum|type|const|function</code>，沒有頂層 <code>import</code>／<code>export</code>（用 <code>rg -n &quot;^(import|export)\s&quot;</code> 確認 0 筆）</li>
+<li><code>rg -n &quot;slot_(drop|manager|test).&quot; src/SlotMachine/Core</code> → 0 筆</li>
+<li><code>rg -n &quot;slot_(manager|test).&quot; src/SlotMachine/Drop</code> → 0 筆</li>
+<li>[x] <strong>Step 5：型別檢查</strong> <code>node run-workflow/round-manager-followup/check-ts242.js</code> → 錯誤數 ≤ 8，且只剩基準那 8 個（<code>unknown</code> ×7、<code>ReelAxisEffect</code> TS7017，行號可變）</li>
+<li>[x] <strong>Step 6：打包</strong> <code>egret build</code>（見驗證工具）→ 成功；<code>manifest.json</code> 若被改就還原</li>
+<li>[x] <strong>Step 7：瀏覽器</strong> <code>preview_start slot-debug</code> → 測試場景出現、按「一般」開轉並停輪一次、console 無錯誤（特別看 Review Focus 1）</li>
+<li>[x] <strong>Step 8：寫 phase-1 checkpoint，停下等使用者同意</strong></li>
+</ul>
+
+<p>---</p>
+
+<h2 id="task-2自訂事件與機台介面">Task 2：自訂事件與機台介面</h2>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Create: <code>src/SlotMachine/Core/Event/SlotMachineEvent.ts</code>、<code>src/SlotMachine/Core/Event/ReelEvent.ts</code>、<code>src/SlotMachine/Core/ISlotMachine.ts</code></li>
+<li>Create: <code>src/SlotMachine/Drop/Event/DropEvent.ts</code>、<code>src/SlotMachine/Drop/IDropSlotMachine.ts</code></li>
+<li>Create: <code>src/SlotMachine/Manager/Event/RoundEvent.ts</code></li>
+<li>Modify: <code>Core/BaseSlotMachine.ts</code>、<code>Core/Reel/BaseReel.ts</code>、<code>Drop/BaseDropSlotMachine.ts</code>、<code>Drop/BaseDropReel.ts</code>、<code>Manager/BaseRoundManager.ts</code>、<code>test/SlotMachineScene.ts</code></li>
+</ul>
+
+<p><strong>Interfaces:</strong></p>
+<ul>
+<li>Produces（事件類別一律照 spec §5.1 寫法；<code>static readonly</code> 字串常數；欄位給預設值；<code>constructor(type: string, bubbles: boolean = false, cancelable: boolean = false)</code> 只呼叫 <code>super</code>）：</li>
+</ul>
+
+<div class="table-wrap"><table><thead><tr><th>類別</th><th>常數（值）</th><th>欄位（預設）</th></tr></thead><tbody></tbody></table></div>
+<p>| <code>slot_core.SlotMachineEvent</code> | <code>REEL_STARTED</code>（<code>&quot;reelStarted&quot;</code>）、<code>ALL_REELS_STARTED</code>（<code>&quot;allReelsStarted&quot;</code>）、<code>REEL_STOPPED</code>（<code>&quot;reelStopped&quot;</code>）、<code>ALL_REELS_STOPPED</code>（<code>&quot;allReelsStopped&quot;</code>）、<code>LISTEN_START</code>（<code>&quot;listenStart&quot;</code>）、<code>LISTEN_END</code>（<code>&quot;listenEnd&quot;</code>） | <code>reelIndex: number = -1</code>、<code>reel: BaseReel \| null = null</code>、<code>stopMode: ReelStopMode = ReelStopMode.ResultAligned</code> |</p>
+<p>| <code>slot_core.ReelEvent</code> | <code>HALF_CELL_COMPLETE</code>、<code>CELL_MOVEMENT_COMPLETE</code>、<code>ROLL_STARTED</code>、<code>ROLL_STOPPED</code>、<code>STOP_EFFECT_STARTED</code>、<code>STOP_EFFECT_COMPLETED</code>、<code>START_EFFECT_COMPLETED</code>、<code>REEL_DATA_CHANGED</code>（值為 camelCase 同名字串） | <code>completedHalf: number = 0</code>、<code>stopMode: ReelStopMode = ReelStopMode.ResultAligned</code>、<code>runtime: ReelSymbolRuntime \| null = null</code>、<code>previousData: SymbolData \| null = null</code> |</p>
+<p>| <code>slot_drop.DropEvent</code> | <code>REEL_DROP_STARTED</code>、<code>REEL_DROP_COMPLETED</code>（機台）；<code>DROP_STARTED</code>、<code>DROP_COMPLETED</code>（單軸） | <code>reelIndex: number = -1</code>、<code>reel: BaseDropReel \| null = null</code> |</p>
+<p>| <code>slot_manager.RoundEvent</code> | <code>STAGE_ENTER</code>、<code>GAME_END</code> | <code>stage: RoundStage = RoundStage.RoundStart</code>（取 <code>RoundStage</code> 第一個成員）、<code>context: RoundStepContext \| null = null</code> |</p>
+
+<ul>
+<li>Produces（介面）：</li>
+<li><code>slot_core.ISlotMachine extends egret.IEventDispatcher</code>：<code>readonly spinning: boolean</code>；<code>startSpin(mode: SpinMode, reelIndexes?: number[]): Promise&lt;void&gt;</code>；<code>stopSpin(resultByReel: SymbolData[][]): Promise&lt;void&gt;</code>；<code>quickStop(): void</code>；<code>waitForSettledAsync(): Promise&lt;void&gt;</code></li>
+<li><code>slot_drop.IDropSlotMachine extends egret.IEventDispatcher</code>：<code>readonly dropping: boolean</code>；<code>readonly allReelsDroppedOut: boolean</code>；<code>dropOut(fastMode?: boolean): Promise&lt;void&gt;</code>；<code>dropIn(boards: slot_core.SymbolData[][], fastMode?: boolean): Promise&lt;void&gt;</code>；<code>dropRefill(removePositions: number[][], refillCells: slot_core.SymbolData[][]): Promise&lt;void&gt;</code>；<code>quickStop(): void</code></li>
+<li><code>BaseSlotMachine implements ISlotMachine</code>；<code>BaseDropSlotMachine implements IDropSlotMachine</code>，新增 getter <code>allReelsDroppedOut</code>（逐軸檢查 <code>droppedOut</code>，用一般 <code>for</code> 迴圈，不用 <code>every</code> + 匿名函式）</li>
+<li><code>BaseRoundManager extends egret.EventDispatcher</code></li>
+</ul>
+
+<ul>
+<li>[x] <strong>Step 1：建立 6 個新檔</strong>（上表內容）</li>
+<li>[x] <strong>Step 2：發送端</strong>：每個發送類別加一個私有發送方法，先 <code>if (!this.hasEventListener(type)) { return; }</code> 再 <code>new</code> → 填欄位 → <code>this.dispatchEvent(evt)</code>；把原本每個 <code>if (this.onXxx !== undefined) { this.onXxx(…); }</code> 換成呼叫該方法，<strong>位置不動</strong>（Review Focus 2）</li>
+<li>[x] <strong>Step 3：移除回呼屬性</strong>：spec §5.2 表中全部 <code>public onXxx?</code> 屬性及 <code>cleanup()</code> 內清它們的行（<code>BaseSlotMachine.cleanup()</code>、<code>BaseReel.cleanup()</code>、<code>BaseDropReel.cleanup()</code>、<code>BaseDropSlotMachine.cleanup()</code>）</li>
+<li>[x] <strong>Step 4：接收端（暫時版）</strong></li>
+<li><code>BaseRoundManager</code>：<code>bindMachineEvents()</code> 改成對機台 <code>addEventListener(SlotMachineEvent.REEL_STARTED, this.onReelStartedEvent, this)</code> 等 6 個；handler 改成具名 private 方法，收事件後照舊呼叫可覆寫方法並收 Promise。<code>onStageEnter</code>／<code>onGameEnd</code> 改成發 <code>RoundEvent</code>（<code>hasEventListener</code> 檢查同 Step 2）。完整改寫在 Task 4</li>
+<li><code>SlotMachineScene</code>：<code>machine.onReelStarted = …</code> 等 5 個、<code>reel.onCellMovementComplete = …</code> 改成 <code>addEventListener(…, this.onXxxEvent, this)</code> 具名方法；移除監聽放在場景重建機台前（原本清掉舊機台的位置）</li>
+<li><code>DropRoundManager</code>：<code>machine.reelList.every(…)</code> 改成 <code>machine.allReelsDroppedOut</code></li>
+<li>[x] <strong>Step 5：搜尋檢查</strong> <code>rg -n &quot;\.on[A-Z]\w*\s*=[^=]&quot; src/SlotMachine/Drop src/SlotMachine/Manager src/test</code> → 只剩 <code>slot_test</code> 內 <code>onUpdate</code>（同模組）；<code>rg -n &quot;public on\w+\?:&quot; src/SlotMachine</code> → 只剩 <code>BaseMovement</code> 三個</li>
+<li>[x] <strong>Step 6：型別檢查</strong> → 只剩基準的 8 個</li>
+<li>[x] <strong>Step 7：打包 + 瀏覽器</strong>：一般／Turbo 開轉、急停、切換聽牌各一次；場景上的起轉／停輪／聽牌標記照常出現</li>
+<li>[x] <strong>Step 8：寫 phase-2 checkpoint，停下等使用者同意</strong></li>
+</ul>
+
+<p>---</p>
+
+<h2 id="task-3icon-與-basedropreel-主動讀值">Task 3：Icon 與 <code>BaseDropReel</code> 主動讀值</h2>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Modify: <code>Core/Reel/Config/ReelConfig.ts</code>（<code>ReelIconDisplayConfig</code>、移除 <code>ReelIconFactory</code>）</li>
+<li>Modify: <code>Core/Reel/BaseReel.ts</code>、<code>Drop/BaseDropReel.ts</code>（兩個欄位、<code>configureIconDisplay()</code>）</li>
+<li>Modify: <code>Core/Reel/Internal/ReelIconManager.ts</code>（<code>initializeIcons()</code>）</li>
+<li>Modify: <code>Core/Reel/BaseReelIcon.ts</code>（<code>setupCell()</code>、<code>onCellSetup()</code>）</li>
+<li>Modify: <code>test/TestReelIcon.ts</code>、<code>test/TestSlotMachine.ts</code></li>
+</ul>
+
+<p><strong>Interfaces:</strong></p>
+<ul>
+<li>Produces：</li>
+<li><code>ReelIconDisplayConfig { readonly iconClass?: string; readonly iconSkinName?: string; }</code></li>
+<li><code>BaseReel</code>、<code>BaseDropReel</code>：<code>public iconClass: string = &quot;&quot;</code>、<code>public iconSkinName: string = &quot;&quot;</code>（exml 可填）；<code>configureIconDisplay(config)</code> 寫入兩欄位後建立空殼（其餘既有行為不變）</li>
+<li><code>ReelIconManager.initializeIcons(container: egret.DisplayObjectContainer, iconClass: string, iconSkinName: string, exitTowardPositiveAxis: boolean, vertical: boolean): void</code></li>
+<li><code>iconClass === &quot;&quot;</code> → 用 <code>slot_core.BaseReelIcon</code>；否則 <code>egret.getDefinitionByName(iconClass)</code>，結果為 <code>null</code>、或不是 <code>BaseReelIcon</code> 本身／子類別（<code>cls === BaseReelIcon || cls.prototype instanceof BaseReelIcon</code>）→ <code>throw new Error(</code> 含 <code>iconClass</code> 的訊息</li>
+<li>每個空殼 <code>new</code>，<code>iconSkinName !== &quot;&quot;</code> 時設 <code>skinName</code>，再 <code>setupCell(cellPitch, exitTowardPositiveAxis, vertical)</code></li>
+<li><code>BaseReelIcon.setupCell(cellPitch: number, exitTowardPositiveAxis: boolean, vertical: boolean): void</code>；新增唯讀 getter <code>exitTowardPositiveAxis</code>、<code>vertical</code>；<code>onCellSetup(cellPitch: number): void</code> 簽章不變，子類別在其中讀 getter</li>
+<li><code>TestReelIcon</code>：無建構子參數；方向改讀 <code>this.exitTowardPositiveAxis</code>、<code>this.vertical</code></li>
+<li><code>TestSlotMachine.applyInitialLayout()</code>：<code>reel.configureIconDisplay({ iconClass: &quot;slot_test.TestReelIcon&quot; })</code>；刪除 <code>createIcon()</code></li>
+</ul>
+
+<ul>
+<li>[x] <strong>Step 1：Icon 相關檔案照上表改</strong></li>
+<li>[x] <strong>Step 2：<code>BaseDropReel</code></strong>（spec §6）：<code>createGroupDrop()</code> 不設 <code>onValueChanged</code>；<code>update()</code> 內每組 <code>drop.movement.update(deltaTime)</code> 後把 <code>drop.movement.value</code> 寫進 <code>drop.runtimes</code> 每一格的 <code>cellOffset</code>；刪除 <code>completeDrop()</code>、<code>cleanup()</code> 內 <code>movement.onValueChanged = undefined</code></li>
+<li>[x] <strong>Step 3：搜尋檢查</strong> <code>rg -n &quot;iconFactory|ReelIconFactory|onValueChanged&quot; src/SlotMachine/Drop src/test</code> → 0 筆；<code>rg -n &quot;iconFactory|ReelIconFactory&quot; src</code> → 0 筆</li>
+<li>[x] <strong>Step 4：型別檢查</strong> → 只剩基準的 8 個</li>
+<li>[x] <strong>Step 5：打包 + 瀏覽器</strong>：切換方向（垂直正／反、水平）各轉一次，牌面方向與改寫前相同；故意把 <code>iconClass</code> 改成 <code>&quot;slot_test.NotExist&quot;</code> 重新 build，確認 throw 訊息含該名稱，再改回（Review Focus 5）</li>
+<li>[x] <strong>Step 6：寫 phase-3 checkpoint，停下等使用者同意</strong></li>
+</ul>
+
+<p>---</p>
+
+<h2 id="task-4manager-改寫">Task 4：Manager 改寫</h2>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Modify: <code>Manager/BaseRoundManager.ts</code>、<code>Manager/RollRoundManager.ts</code>、<code>Manager/DropRoundManager.ts</code>、<code>Manager/Data/RoundData.ts</code></li>
+</ul>
+
+<p><strong>Interfaces:</strong></p>
+<ul>
+<li>Consumes：Task 2 的 <code>ISlotMachine</code>、<code>IDropSlotMachine</code>、事件類別、<code>RoundEvent</code></li>
+<li>Produces：</li>
+<li><code>class BaseRoundManager extends egret.EventDispatcher</code>（非 abstract、無泛型）</li>
+<li><code>public init(roll: slot_core.ISlotMachine | null, drop: slot_drop.IDropSlotMachine | null): void</code>：<code>_inited</code> 已為 true 時 throw；存參照；對非 null 的機台加事件監聽</li>
+<li><code>public cleanup(): void</code>：移除全部監聽（參數與 add 相同）、清空逐軸 Promise 陣列、機台參照設 <code>null</code>、<code>_playing = false</code>、<code>_inited = false</code></li>
+<li><code>private assertInitialized(): void</code>；<code>startGame()</code>、<code>requestStop()</code> 開頭呼叫</li>
+<li><code>protected async nextRound(): Promise&lt;RoundData | null&gt;</code> → 預設 <code>return null;</code>，註解「留給繼承類別」</li>
+<li><code>protected async presentBoard(context: RoundStepContext): Promise&lt;void&gt;</code> → 預設 <code>throw new Error(</code></li>
+<li>五個環節、逐軸事件方法、<code>onSkipRequested()</code>：<code>protected async</code>，預設只放註解「留給繼承類別。」</li>
+<li>環節流程：<code>playStep()</code>／<code>playRound()</code> 內直接依序 <code>await this.onRoundStart(context)</code> 等，刪除 <code>runStage()</code>／<code>hook.call</code></li>
+<li><code>RollRoundManager.init()</code>：<code>roll === null</code> → throw，再 <code>super.init(…)</code>；<code>protected getSpinMode(round: RoundData | null): slot_core.SpinMode</code> 預設 throw</li>
+<li><code>DropRoundManager.init()</code>：<code>drop === null</code> → throw</li>
+<li><code>RoundData { readonly state: any; … }</code>、<code>RoundStepContext</code>、<code>RoundReelEventContext</code> 去泛型；<code>ROUND_DATA_PENDING</code> → <code>RoundData</code> 所在檔新增 <code>class RoundDataConst { public static readonly PENDING_STEP_INDEX: number = -1; }</code>（名稱暫定），原常數引用處改用它</li>
+</ul>
+
+<ul>
+<li>[x] <strong>Step 1：<code>RoundData.ts</code> 去泛型、去 <code>unknown</code>、常數搬到類別</strong></li>
+<li>[x] <strong>Step 2：<code>BaseRoundManager</code> 照上表改</strong>，並處理 spec §8.2 清單：getter <code>reelEventContext</code> 改成 <code>private createReelEventContext(): RoundReelEventContext</code>（一般方法）；<code>cascades as RoundCascade[]</code> 改成先檢查 <code>cascades !== undefined</code>；壓 Uncaught 的空 catch 改成具名 private 方法；一個參數一行；<code>throw new Error(</code> 換行</li>
+<li>[x] <strong>Step 3：<code>RollRoundManager</code></strong>：<code>startSpinning()</code> 收下 <code>startSpin()</code> 的 Promise 存在欄位，<code>presentBoard()</code> 在 <code>stopSpin()</code> 前 <code>await</code> 它（錯誤往外丟，不再 <code>void</code>）；<code>cleanup()</code> 覆寫清掉該欄位再 <code>super.cleanup()</code></li>
+<li>[x] <strong>Step 4：<code>DropRoundManager</code></strong>：<code>presentBoard()</code> 用 <code>allReelsDroppedOut</code>（Task 2 已改），確認無匿名函式</li>
+<li>[x] <strong>Step 5：搜尋檢查</strong> <code>rg -n &quot;abstract|unknown|\.call\(|&lt;TState&quot; src/SlotMachine/Manager</code> → 0 筆；<code>rg -n &quot;constructor\(&quot; src/SlotMachine/Manager</code> → 0 筆</li>
+<li>[x] <strong>Step 6：型別檢查</strong> → 只剩 <code>BaseDropSlotMachine</code> 的 <code>unknown</code> 與 <code>ReelAxisEffect</code> TS7017 兩個</li>
+<li>[x] <strong>Step 7：寫 phase-4 checkpoint，停下等使用者同意</strong>（manager 目前沒有場景在用，瀏覽器無從驗證，checkpoint 註明）</li>
+</ul>
+
+<p>---</p>
+
+<h2 id="task-5其他規範修正coredrop">Task 5：其他規範修正（Core、Drop）</h2>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Modify: <code>Core/Reel/Internal/BaseMovement.ts</code>、<code>Core/Reel/Internal/ReelStopFlow.ts</code>、<code>Core/Reel/BaseReel.ts</code>、<code>Core/Reel/Internal/ReelAxisEffect.ts</code>、<code>Drop/BaseDropReel.ts</code>、<code>Drop/BaseDropSlotMachine.ts</code>，以及 §9.1 搜到匿名函式的其他 Core 檔（<code>BaseSlotMachine.ts</code>、<code>ReelDataFlow.ts</code>、<code>ReelIconManager.ts</code>、<code>ReelSymbolRegistry.ts</code>、<code>ReelConfig.ts</code>）</li>
+</ul>
+
+<p><strong>Interfaces:</strong></p>
+<ul>
+<li>Produces：</li>
+<li><code>BaseMovement</code>：無建構子；<code>private _inited = false</code>；<code>public init(initialValue: number = 0): void</code> —— <strong>已 init 時直接 return</strong>（Review Focus 3）；<code>cleanup()</code> 把 <code>_inited</code> 設回 false 並清指令與回呼</li>
+<li>呼叫端：<code>BaseReel.wireMovementAndReset()</code> 開頭 <code>this._movement.init(0)</code>；<code>ReelAxisEffect.configure()</code> 開頭 <code>this._movement.init(0)</code>；<code>BaseDropReel.createGroupDrop()</code>：<code>new BaseMovement()</code> 後 <code>movement.init(from)</code></li>
+<li><code>ReelStopFlow</code>：無建構子；<code>public init(dataFlow: ReelDataFlow, cellSpanResolver: ReelCellSpanResolver, performanceDataProvider: ReelPerformanceDataProvider, dataValidator: ReelDataValidator): void</code> —— 已 init 時直接 return；四個欄位型別 <code>T | null = null</code>，內部經由 <code>private get dataFlow(): ReelDataFlow</code>（null 時 throw）等 getter 取用</li>
+<li>呼叫端：<code>BaseReel</code> 欄位改 <code>private readonly _stopFlow = new ReelStopFlow();</code>，<code>wireMovementAndReset()</code> 內 <code>this._stopFlow.init(this._dataFlow, this._cellSpanResolver, this._performanceDataProvider, this._flowDataValidator)</code></li>
+<li><code>ReelAxisEffect</code> 緩動表：每個緩動改成 <code>ReelAxisEffect</code> 上的 <code>private static</code> 具名方法；查表改成 <code>switch (easing)</code> 回傳對應方法（同時解掉 TS7017）</li>
+<li><code>BaseDropSlotMachine.assertOnePerReel(values: any[], label: string)</code></li>
+<li><code>BaseDropSlotMachine</code> 批次的 <code>start: () =&gt; reel.startDropXxx()</code>：批次項目改存 <code>{ reelIndex, reel, kind, board, … }</code> 資料，由具名方法依 <code>kind</code> 呼叫 <code>reel.startDropOut()</code>／<code>startDropIn()</code>／<code>startDropRefill()</code>（<code>kind</code> 用 enum，名稱暫定 <code>DropBatchKind</code>）</li>
+</ul>
+
+<ul>
+<li>[x] <strong>Step 1：<code>BaseMovement</code>、<code>ReelStopFlow</code> 與呼叫端</strong></li>
+<li>[x] <strong>Step 2：<code>ReelAxisEffect</code> 緩動表</strong></li>
+<li>[x] <strong>Step 3：<code>BaseDropSlotMachine</code></strong>：<code>unknown</code>、批次 <code>start</code></li>
+<li>[x] <strong>Step 4：其餘匿名函式</strong>：<code>rg -n &quot;=&gt;&quot; src/SlotMachine</code> 逐筆處理 —— 陣列 callback 改一般 <code>for</code> 迴圈或具名方法；<code>new Promise((resolve) =&gt; …)</code> 改具名 executor 欄位（例：<code>private readonly _stopPromiseExecutor = (resolve: () =&gt; void): void =&gt; { this._resolveStopPromise = resolve; };</code>）；<code>.then(() =&gt; …)</code> 改 <code>async</code> 寫法；<code>[...a, ...b]</code> 不是函式，不動</li>
+<li>[x] <strong>Step 5：搜尋檢查</strong> <code>rg -n &quot;=&gt;&quot; src/SlotMachine</code> → 每一筆都是具名欄位（<code>private readonly _xxx = (…): T =&gt; {</code>）或型別宣告；<code>rg -n &quot;unknown|constructor\(&quot; src/SlotMachine</code> → 0 筆</li>
+<li>[x] <strong>Step 6：型別檢查</strong> → <code>TypeScript 2.4.2 - 0 error(s)</code></li>
+<li>[x] <strong>Step 7：打包 + 瀏覽器</strong>：一般／Turbo／L2 開轉、急停、切換停輪時間、切換軸數各一次，行為與改寫前相同</li>
+<li>[x] <strong>Step 8：寫 phase-5 checkpoint，停下等使用者同意</strong></li>
+</ul>
+
+<p>---</p>
+
+<h2 id="task-6測試場景生命週期與最終驗證">Task 6：測試場景生命週期與最終驗證</h2>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Modify: <code>test/SlotMachineScene.ts</code>、<code>test/TestSlotMachine.ts</code>、<code>test/TestSymbolTable.ts</code></li>
+</ul>
+
+<p><strong>Interfaces:</strong></p>
+<ul>
+<li>Produces：</li>
+<li><code>TestSlotMachine</code>：無建構子參數；<code>public initTest(reels: slot_core.BaseReel[], layoutType: slot_core.ReelIconDirection, inverseDirection: boolean, targetStopTime: number): void</code> 存三個值後呼叫 <code>this.init(reels)</code>；三個欄位給預設值（<code>Vertical</code>、<code>false</code>、<code>0.15</code>）</li>
+<li><code>SlotMachineScene</code>：無建構子內容；第一次 <code>egret.Event.ADDED_TO_STAGE</code> 時呼叫 <code>public init(): void</code>（<code>_inited</code> 防重複；handler 具名，觸發後移除監聽）；<code>public cleanup(): void</code> 移除全部按鈕 <code>TOUCH_TAP</code>、機台與單軸事件監聽、<code>machine.cleanup()</code></li>
+<li><code>addButton(label: string, x: number, y: number, handler: (event: egret.TouchEvent) =&gt; void)</code>：呼叫端傳具名方法（<code>this.onNormalButtonTap</code> 等），<code>addEventListener(egret.TouchEvent.TOUCH_TAP, handler, this)</code>；按鈕與 handler 成對記錄，<code>cleanup()</code> 逐一移除</li>
+<li>[x] <strong>Step 1：<code>TestSlotMachine</code>、<code>SlotMachineScene</code> 照上表改</strong>；場景內其餘匿名函式（<code>.catch((error) =&gt; …)</code>、<code>map((mark) =&gt; …)</code> 等）同 Task 5 Step 4 處理；<code>TestSymbolTable</code> 的 <code>TEST_SYMBOLS.map(item =&gt; …)</code> 同</li>
+<li>[x] <strong>Step 2：全範圍搜尋檢查（spec §11）</strong></li>
+<li><code>rg -n &quot;^(import|export)\s&quot; src/SlotMachine src/test src/Main.ts</code> → 0 筆</li>
+<li><code>rg -n &quot;\.(keys|values|entries)\(\)|Array\.from|\?\.|\?\?|\bunknown\b|\babstract\b&quot; src/SlotMachine src/test</code> → 0 筆</li>
+<li><code>rg -n &quot;=&gt;&quot; src/SlotMachine src/test</code> → 只剩具名欄位與型別宣告</li>
+<li><code>rg -n &quot;addEventListener&quot; src/SlotMachine src/test</code> 與 <code>rg -n &quot;removeEventListener&quot; …</code> 逐一配對，參數相同</li>
+<li><code>rg -n &quot;constructor\(&quot; src/SlotMachine src/test</code> → 只剩事件類別的建構子（只呼叫 <code>super</code>）</li>
+<li>[x] <strong>Step 3：型別檢查</strong> → 0 error(s)</li>
+<li>[x] <strong>Step 4：打包 + 瀏覽器（完整）</strong>：開轉（一般／Turbo／L2）、急停、切換 Server 延遲／盤面／方向／軸數／停輪時間／聽牌，各至少一次；console 無錯誤；截圖附在 checkpoint</li>
+<li>[x] <strong>Step 5：寫 final checkpoint，停下等使用者同意</strong></li>
+</ul>
+
+<p>---</p>
+
+<h2 id="task-7重寫斷言tests-2026-10-01-code-review-後追加待使用者確認做法">Task 7：重寫斷言（<code>tests/</code>）—— 2026-10-01 code review 後追加，待使用者確認做法</h2>
+
+<p><strong>起因</strong>：<code>tests/CoreGeometry.test.ts</code>（4855 行、357 項斷言）以 <code>import</code> 載入核心、用舊 API，本輪改寫後編譯不過。使用者確認重要，要重寫。</p>
+
+<p><strong>Files:</strong></p>
+<ul>
+<li>Modify: <code>tests/EgretStub.ts</code>、<code>tests/CoreGeometry.test.ts</code></li>
+<li>Create: <code>tests/build-tests.js</code>（編譯＋執行腳本）</li>
+</ul>
+
+<p><strong>做法（草案）</strong></p>
+
+<ol>
+<li><strong>載入方式</strong>：不再用 <code>import</code>。以腳本收集 <code>src/SlotMachine/**/*.ts</code>，依 <code>extends</code> 關係排出父類別在前的順序（與打包工具 <code>sortUnmodules()</code> 同一件事），連同 <code>tests/EgretStub.ts</code>、測試檔用 <code>tsc --outFile</code> 編成一個 js，在 Node 執行</li>
+<li><strong>Egret 替身補齊</strong>：<code>egret.EventDispatcher</code>（add／remove／has／dispatch，同一組 listener + thisObject 不重複）、<code>egret.Event</code>、<code>egret.getDefinitionByName</code>（依點號路徑從全域找）、<code>egret.startTick</code>／<code>stopTick</code>、<code>eui.Component</code> 繼承 EventDispatcher</li>
+<li><strong>測試檔改寫</strong>：import → <code>slot_core.X</code> 等完整名稱；回呼屬性（14 處）→ <code>addEventListener</code>；manager 建構子 → <code>init()</code>；去泛型；<code>iconFactory</code> → <code>iconClass</code>（測試用空殼放進測試的 namespace）；<code>BaseMovement(x)</code> → <code>init(x)</code>；<code>ROUND_DATA_PENDING</code> → <code>RoundDataConst.PENDING_STEP_INDEX</code></li>
+<li><strong>補新行為的斷言</strong>：事件（沒人聽不建事件物件、發送順序）、<code>init()</code>／<code>cleanup()</code> 監聽成對、<code>iconClass</code> 找不到會 throw、<code>requestStop()</code> 未 init 不 throw、掉落「上一批還在跑時下指令不蓋資料」</li>
+<li><strong>還原確認</strong>：挑幾項新斷言故意改壞，確認會變紅</li>
+</ol>
+
+<p><strong>待使用者決定</strong>：測試檔裡的匿名函式（約 357 行有 <code>=&gt;</code>，多為斷言用的小函式）是否也要照「禁止匿名函式」改寫。<code>tests/</code> 不進遊戲打包、不在 Egret 執行；照改的話改動量大很多</p>
+
+<p><strong>Verification</strong>：<code>node tests/build-tests.js</code> → 全部斷言通過；專案型別檢查仍 0 error(s)</p>
+    </main>
+  </div>
+</body>
+</html>

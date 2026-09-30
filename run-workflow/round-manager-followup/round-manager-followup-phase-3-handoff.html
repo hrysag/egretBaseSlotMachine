@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 3 Handoff</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phase 3 Handoff</h1>
+    <p>Source: round-manager-followup-phase-3-handoff.md</p>
+    <p>Generated: 2026-10-01 01:05:15</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#phase-execution-handoffphase-3-icon-與-basedropreel-主動讀值">Phase Execution Handoff：Phase 3 Icon 與 `BaseDropReel` 主動讀值</a></li>
+<li class="level-2"><a href="#required-superpower">Required Superpower</a></li>
+<li class="level-2"><a href="#phase">Phase</a></li>
+<li class="level-2"><a href="#runtime-gate">Runtime Gate</a></li>
+<li class="level-2"><a href="#implementation-boundary">Implementation Boundary</a></li>
+<li class="level-2"><a href="#allowed-changes">Allowed Changes</a></li>
+<li class="level-2"><a href="#forbidden-changes">Forbidden Changes</a></li>
+<li class="level-2"><a href="#public-api-notes">Public API Notes</a></li>
+<li class="level-2"><a href="#handoff-rules">Handoff Rules</a></li>
+<li class="level-2"><a href="#verification">Verification</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="phase-execution-handoffphase-3-icon-與-basedropreel-主動讀值">Phase Execution Handoff：Phase 3 Icon 與 <code>BaseDropReel</code> 主動讀值</h1>
+
+<h2 id="required-superpower">Required Superpower</h2>
+
+<p><code>superpowers:executing-plans</code>（inline 執行）</p>
+
+<h2 id="phase">Phase</h2>
+
+<ul>
+<li>Name：Phase 3 Icon 與 <code>BaseDropReel</code> 主動讀值（plan Task 3）</li>
+<li>Goal：空殼改由 <code>iconClass</code>／<code>iconSkinName</code> 兩個字串欄位建立，取代 <code>iconFactory</code>；<code>BaseDropReel</code> 不再掛 <code>BaseMovement.onValueChanged</code>，每幀自己讀值</li>
+<li>Mode：FAST</li>
+<li>Source plan：<code>run-workflow/round-manager-followup/round-manager-followup-plan.md</code> Task 3</li>
+<li>Spec：§6、§7</li>
+</ul>
+
+<h2 id="runtime-gate">Runtime Gate</h2>
+
+<ul>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Current workflow state：IMPLEMENTATION</li>
+<li>Active phase：phase-3</li>
+<li>Workspace reconciliation：Phase 1、2 修改未 commit（使用者直接進 Phase 3），RECONCILED</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="implementation-boundary">Implementation Boundary</h2>
+
+<p><code>game-implementation-boundary</code>（Egret）。重點：<code>egret.getDefinitionByName()</code> 依全域名稱找類別（namespace 已由打包工具掛上 <code>window</code>）；不用匿名函式；刪除前先查相依。</p>
+
+<h2 id="allowed-changes">Allowed Changes</h2>
+
+<ul>
+<li><code>Core/Reel/Config/ReelConfig.ts</code>：<code>ReelIconDisplayConfig</code> 改兩個選填字串欄位；刪除 <code>ReelIconFactory</code>（相依只有本表列出的檔案）</li>
+<li><code>Core/Reel/Internal/ReelIconManager.ts</code>：<code>initializeIcons()</code></li>
+<li><code>Core/Reel/BaseReelIcon.ts</code>：<code>setupCell()</code>、兩個唯讀 getter</li>
+<li><code>Core/Reel/BaseReel.ts</code>、<code>Drop/BaseDropReel.ts</code>：兩個公開欄位、<code>configureIconDisplay()</code></li>
+<li><code>Drop/BaseDropReel.ts</code>：<code>createGroupDrop()</code>、<code>update()</code>、<code>completeDrop()</code>、<code>cleanup()</code>（spec §6）</li>
+<li><code>test/TestReelIcon.ts</code>、<code>test/TestSlotMachine.ts</code></li>
+</ul>
+
+<h2 id="forbidden-changes">Forbidden Changes</h2>
+
+<ul>
+<li><code>BaseMovement</code> 本身、<code>BaseReel</code>／<code>ReelAxisEffect</code> 對 <code>BaseMovement</code> 的同模組回呼</li>
+<li>其他匿名函式、建構子 → <code>init()</code>（Task 5、6）</li>
+<li><code>tests/<strong></code>、<code>scripts/</strong></code>、<code>resource/**</code></li>
+</ul>
+
+<h2 id="public-api-notes">Public API Notes</h2>
+
+<ul>
+<li><code>ReelIconDisplayConfig</code>：<code>iconFactory</code> → <code>iconClass?: string</code>、<code>iconSkinName?: string</code>；<code>ReelIconFactory</code> 移除</li>
+<li><code>BaseReel</code>、<code>BaseDropReel</code> 新增 <code>public iconClass: string = &quot;&quot;</code>、<code>public iconSkinName: string = &quot;&quot;</code>（可在 exml 填）；<code>configureIconDisplay(config)</code> 有給的欄位先寫入，再以兩個欄位建立空殼</li>
+<li><code>BaseReelIcon.setupCell(cellPitch, exitTowardPositiveAxis, vertical)</code>；新增唯讀 getter <code>exitTowardPositiveAxis</code>、<code>vertical</code>；<code>onCellSetup(cellPitch)</code> 簽章不變</li>
+<li><strong>與 plan 的差異</strong>：plan 寫 <code>initializeIcons(container, iconClass, iconSkinName, exitTowardPositiveAxis, vertical)</code>。<code>ReelIconManager</code> 本身就是方向的唯一來源（<code>exitTowardPositiveAxis</code>、<code>layoutType</code> 都在它身上），改成 <code>initializeIcons(container, iconClass, iconSkinName)</code>，由它自己把方向交給 <code>setupCell()</code>，不從外面多傳一份</li>
+<li><code>TestReelIcon</code>：無建構子參數；<code>TestSlotMachine.createIcon()</code> 移除</li>
+</ul>
+
+<h2 id="handoff-rules">Handoff Rules</h2>
+
+<ul>
+<li><code>iconClass</code> 為空字串 → <code>slot_core.BaseReelIcon</code>；找不到、或不是 <code>BaseReelIcon</code> 本身／子類別 → throw，訊息含 <code>iconClass</code>；<strong>在清掉舊空殼之前</strong>檢查，失敗不動現有空殼</li>
+<li><code>iconSkinName</code> 非空才設定 <code>skinName</code></li>
+<li><code>BaseDropReel.update()</code>：每組 <code>movement.update(deltaTime)</code> 後把 <code>movement.value</code> 寫進該組每一格的 <code>cellOffset</code>，全部組推完再 <code>syncAllIcons()</code>，順序不變</li>
+<li>若必須改名或改結構才能編譯，停下回報</li>
+</ul>
+
+<h2 id="verification">Verification</h2>
+
+<ul>
+<li>型別檢查 → 只剩基準 8 個</li>
+<li>搜尋：<code>iconFactory|ReelIconFactory|onValueChanged</code>（Drop、test）0 筆；<code>iconFactory|ReelIconFactory</code>（src）0 筆</li>
+<li>打包（<code>EGRET_PATH</code>）成功</li>
+<li>瀏覽器：切換方向（垂直正／反、水平正／反）各轉一次，大圖延伸方向與改寫前相同；暫時把 <code>iconClass</code> 改成 <code>&quot;slot_test.NotExist&quot;</code> 重新打包，確認 throw 訊息含該名稱，再改回</li>
+<li>掉落：沒有場景在用，只能型別檢查（checkpoint 註明）</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

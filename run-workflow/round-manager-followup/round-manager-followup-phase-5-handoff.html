@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 5 Handoff</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phase 5 Handoff</h1>
+    <p>Source: round-manager-followup-phase-5-handoff.md</p>
+    <p>Generated: 2026-10-01 01:28:13</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#phase-execution-handoffphase-5-其他規範修正coredrop">Phase Execution Handoff：Phase 5 其他規範修正（Core、Drop）</a></li>
+<li class="level-2"><a href="#required-superpower">Required Superpower</a></li>
+<li class="level-2"><a href="#phase">Phase</a></li>
+<li class="level-2"><a href="#runtime-gate">Runtime Gate</a></li>
+<li class="level-2"><a href="#implementation-boundary">Implementation Boundary</a></li>
+<li class="level-2"><a href="#allowed-changes">Allowed Changes</a></li>
+<li class="level-2"><a href="#forbidden-changes">Forbidden Changes</a></li>
+<li class="level-2"><a href="#做法與-plan-的差異另標">做法（與 plan 的差異另標）</a></li>
+<li class="level-2"><a href="#handoff-rules">Handoff Rules</a></li>
+<li class="level-2"><a href="#verification">Verification</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="phase-execution-handoffphase-5-其他規範修正coredrop">Phase Execution Handoff：Phase 5 其他規範修正（Core、Drop）</h1>
+
+<h2 id="required-superpower">Required Superpower</h2>
+
+<p><code>superpowers:executing-plans</code>（inline 執行）</p>
+
+<h2 id="phase">Phase</h2>
+
+<ul>
+<li>Name：Phase 5 其他規範修正（plan Task 5）</li>
+<li>Goal：Core、Drop 內剩下不合規範的寫法全部改掉：建構子收參數 → <code>init()</code>；緩動表匿名函式 → 具名方法；<code>unknown</code> → <code>any</code>；其餘匿名函式 → 一般 <code>for</code> 迴圈或具名欄位。行為不變；型別檢查到 0 錯誤</li>
+<li>Mode：FAST</li>
+<li>Source plan：<code>run-workflow/round-manager-followup/round-manager-followup-plan.md</code> Task 5</li>
+<li>Spec：§9</li>
+</ul>
+
+<h2 id="runtime-gate">Runtime Gate</h2>
+
+<ul>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Current workflow state：IMPLEMENTATION</li>
+<li>Active phase：phase-5</li>
+<li>Workspace reconciliation：Phase 1～4 修改未 commit，RECONCILED</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="implementation-boundary">Implementation Boundary</h2>
+
+<p><code>game-implementation-boundary</code>（Egret）：禁止匿名函式（宣告成變數指向 lambda）；建構子不做初始化，改 <code>init()</code> + <code>_inited</code>；「不可重寫已定義好的底層演算法」—— 只換寫法、不改計算。</p>
+
+<h2 id="allowed-changes">Allowed Changes</h2>
+
+<ul>
+<li><code>Core/Reel/Internal/BaseMovement.ts</code>、<code>Core/Reel/Internal/ReelStopFlow.ts</code>、<code>Core/Reel/Internal/ReelAxisEffect.ts</code>、<code>Core/Reel/Internal/ReelDataFlow.ts</code>、<code>Core/Reel/Internal/ReelIconManager.ts</code>、<code>Core/Reel/Data/ReelSymbolRegistry.ts</code></li>
+<li><code>Core/Reel/BaseReel.ts</code>、<code>Core/BaseSlotMachine.ts</code></li>
+<li><code>Drop/BaseDropReel.ts</code>、<code>Drop/BaseDropSlotMachine.ts</code></li>
+<li>上述檔案與 <code>Core/SlotMachine/Config/*.ts</code> 內提到舊回呼名稱的註解</li>
+</ul>
+
+<h2 id="forbidden-changes">Forbidden Changes</h2>
+
+<ul>
+<li><code>Manager/<strong></code>（Phase 4 已完成）、<code>test/</strong></code>（Phase 6）、<code>tests/**</code></li>
+<li>任何計算、時序、發送順序</li>
+</ul>
+
+<h2 id="做法與-plan-的差異另標">做法（與 plan 的差異另標）</h2>
+
+<div class="table-wrap"><table><thead><tr><th>項目</th><th>做法</th></tr></thead><tbody><tr><td><code>BaseMovement</code></td><td>無建構子；<code>_value = 0</code>、<code>_inited</code>；<code>init(initialValue = 0)</code> 已 init 直接 return；新增 <code>cleanup()</code>（清指令、三個回呼、值歸 0、<code>_inited = false</code>）。<strong>不在各方法加 <code>assertInitialized()</code></strong>：<code>ReelAxisEffect.reset()</code> 等可能在設定前被呼叫（例如未 <code>init()</code> 的單軸被 <code>cleanup()</code>），加了會把原本可行的順序變成 throw</td></tr><tr><td><code>BaseMovement</code> 呼叫端</td><td><code>BaseReel.wireMovementAndReset()</code>、<code>ReelAxisEffect.configure()</code> 開頭 <code>init(0)</code>；<code>BaseDropReel.createGroupDrop()</code> <code>init(from)</code>；<code>BaseReel.cleanup()</code>、<code>ReelAxisEffect.cleanup()</code> 改呼叫 <code>movement.cleanup()</code></td></tr></tbody></table></div>
+<p>| <code>ReelStopFlow</code> | 無建構子；四個相依 <code>T \| null = null</code>，經 private getter 取用（null 時 throw）；<code>init(…)</code> 已 init 直接 return；<code>BaseReel</code> 在 <code>wireMovementAndReset()</code> 呼叫 |</p>
+<p>| <code>ReelAxisEffect</code> 緩動表 | 每個緩動一個 <code>private static</code> 具名方法；<code>resolveEasing()</code> 改 <code>switch</code>（同時解掉 TS7017） |</p>
+<p>| <code>ReelDataFlow.takeNextPerformanceSymbol()</code> | 判斷式參數 <code>accepts: (cellSpan) =&gt; boolean</code> 改成 <code>maxCellSpan: number</code>（<code>cellSpan &lt;= maxCellSpan</code>）。原本兩種判斷式 <code>cellSpan === 1</code>、<code>cellSpan &lt;= shortfall</code>；<code>cellSpan</code> 恆為正整數，<code>=== 1</code> ⇔ <code>&lt;= 1</code>（plan 未列，屬「其餘匿名函式」） |</p>
+<p>| <code>new Promise((resolve) =&gt; …)</code> | 具名 executor 欄位 |</p>
+<p>| 陣列 <code>map</code>／<code>filter</code>／<code>find</code>／<code>every</code>／<code>some</code>／<code>forEach</code> | 一般 <code>for</code> 迴圈 |</p>
+<p>| <code>sort</code> 比較函式、<code>Map.forEach</code> | 具名 static 方法／具名欄位（lib 無 iterable，Map 只能 <code>forEach</code>） |</p>
+<p>| <code>.then(() =&gt; undefined)</code> | 改 <code>async</code> 寫法 |</p>
+<p>| <code>BaseDropSlotMachine</code> 批次 | <code>PendingDropStart</code> 改存資料（<code>kind: DropBatchKind</code>、盤面／消除資料），由具名方法依 <code>kind</code> 呼叫單軸；<code>unknown[]</code> → <code>any[]</code> |</p>
+<p>| <code>BaseDropSlotMachine</code> 到位轉發 | <code>void dropped.then(() =&gt; …)</code> 改成 <code>dropped.then(this._reelDropSettledHandler)</code>：handler 逐軸找「已開始、已不在掉、還沒轉發」的軸發 <code>REEL_DROP_COMPLETED</code>。時機與原本相同（單軸 Promise resolve 後的第一個 microtask，早於整批 Promise 的等待者） |</p>
+
+<h2 id="handoff-rules">Handoff Rules</h2>
+
+<ul>
+<li>只換寫法；迴圈的走訪順序、結果陣列的順序與原本相同</li>
+<li>CRLF 檔維持 CRLF（<code>BaseSlotMachine.ts</code>、<code>BaseReel.ts</code> 及 Core 其他 CRLF 檔），LF 檔維持 LF</li>
+<li>若必須改名或改結構才能編譯，停下回報</li>
+</ul>
+
+<h2 id="verification">Verification</h2>
+
+<ul>
+<li>型別檢查：<code>TypeScript 2.4.2 - 0 error(s)</code></li>
+<li>搜尋：<code>=&gt;</code>（Core、Drop）只剩具名欄位與型別宣告；<code>unknown|constructor\(</code>（事件類別除外）0 筆</li>
+<li>打包成功</li>
+<li>瀏覽器：一般／Turbo／L2 開轉、急停、切換停輪時間、切換軸數、切換聽牌，停輪時刻與順序與改寫前相同（改寫前的數值見 Phase 2、3 checkpoint）；另以 JS 驗證回彈緩動值與改寫前公式一致</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

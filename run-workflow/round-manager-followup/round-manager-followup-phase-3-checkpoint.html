@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 3 Checkpoint</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phase 3 Checkpoint</h1>
+    <p>Source: round-manager-followup-phase-3-checkpoint.md</p>
+    <p>Generated: 2026-10-01 01:05:15</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#workflow-checkpointphase-3-icon-與-basedropreel-主動讀值">Workflow Checkpoint：Phase 3 Icon 與 `BaseDropReel` 主動讀值</a></li>
+<li class="level-2"><a href="#current-workflow">Current Workflow</a></li>
+<li class="level-2"><a href="#artifacts">Artifacts</a></li>
+<li class="level-2"><a href="#pause-cancel">Pause / Cancel</a></li>
+<li class="level-2"><a href="#workspace">Workspace</a></li>
+<li class="level-2"><a href="#completed-tasks">Completed Tasks</a></li>
+<li class="level-2"><a href="#review-status">Review Status</a></li>
+<li class="level-2"><a href="#verification-evidence">Verification Evidence</a></li>
+<li class="level-2"><a href="#remaining-risk">Remaining Risk</a></li>
+<li class="level-2"><a href="#user-approval-required">User Approval Required</a></li>
+<li class="level-2"><a href="#approval-basis">Approval Basis</a></li>
+<li class="level-2"><a href="#confirmation-checklist">Confirmation Checklist</a></li>
+<li class="level-2"><a href="#proposed-operation-steps">Proposed Operation Steps</a></li>
+<li class="level-2"><a href="#next-available-actions">Next Available Actions</a></li>
+<li class="level-2"><a href="#recommended-next-step">Recommended Next Step</a></li>
+<li class="level-2"><a href="#user-decision-needed">User Decision Needed</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="workflow-checkpointphase-3-icon-與-basedropreel-主動讀值">Workflow Checkpoint：Phase 3 Icon 與 <code>BaseDropReel</code> 主動讀值</h1>
+
+<h2 id="current-workflow">Current Workflow</h2>
+
+<ul>
+<li>Mode：FAST</li>
+<li>State：IMPLEMENTATION</li>
+<li>Round topic：round-manager-followup</li>
+<li>Round folder：<code>run-workflow/round-manager-followup/</code></li>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Active phase：phase-3（plan Task 3）→ 狀態 <strong>VERIFIED</strong>，使用者同意後標 DONE（Phase 1、2 已 DONE）</li>
+<li>Archived：false</li>
+<li>Archive path：（無）</li>
+<li>Recovery source：runtime-state</li>
+</ul>
+
+<h2 id="artifacts">Artifacts</h2>
+
+<ul>
+<li>Spec：[round-manager-followup-spec.md](round-manager-followup-spec.md)</li>
+<li>Plan：[round-manager-followup-plan.md](round-manager-followup-plan.md)（Task 3 六個步驟已勾選）</li>
+<li>Phase handoff：[round-manager-followup-phase-3-handoff.md](round-manager-followup-phase-3-handoff.md)</li>
+<li>Last checkpoint：本檔（前一份：[round-manager-followup-phase-2-checkpoint.md](round-manager-followup-phase-2-checkpoint.md)）</li>
+<li>Last review：無獨立 review</li>
+<li>Last verification：本檔 Verification Evidence（2026-10-01）</li>
+<li>Last reconciliation：本檔 Workspace</li>
+</ul>
+
+<h2 id="pause-cancel">Pause / Cancel</h2>
+
+<ul>
+<li>isPaused：false</li>
+<li>isCancelled：false</li>
+<li>resumeAllowed：true</li>
+</ul>
+
+<h2 id="workspace">Workspace</h2>
+
+<ul>
+<li>Workspace reconciliation：<strong>RECONCILED</strong></li>
+<li>修改：<code>Core/Reel/Config/ReelConfig.ts</code>、<code>Core/Reel/Internal/ReelIconManager.ts</code>、<code>Core/Reel/BaseReelIcon.ts</code>、<code>Core/Reel/BaseReel.ts</code>、<code>Drop/BaseDropReel.ts</code>、<code>test/TestReelIcon.ts</code>、<code>test/TestSlotMachine.ts</code>，全在 handoff 允許範圍</li>
+<li>換行：CRLF 檔（前 6 個中的 Core 與 test 檔）維持 CRLF；<code>BaseDropReel.ts</code> 維持 LF</li>
+<li><code>manifest.json</code>：未改動</li>
+<li>Phase 1、2 修改仍未 commit</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="completed-tasks">Completed Tasks</h2>
+
+<ul>
+<li><code>ReelIconDisplayConfig</code>：<code>iconFactory</code> → 選填 <code>iconClass</code>、<code>iconSkinName</code>；刪除 <code>ReelIconFactory</code>（刪除前已確認只有本階段改到的檔案在用）</li>
+<li><code>BaseReel</code>、<code>BaseDropReel</code>：新增 <code>public iconClass: string = &quot;&quot;</code>、<code>public iconSkinName: string = &quot;&quot;</code></li>
+<li><code>configureIconDisplay(config)</code>：config 有給的欄位優先，沒給的沿用欄位目前值；<strong>建立成功才寫回欄位</strong></li>
+<li><code>ReelIconManager.initializeIcons(container, iconClass, iconSkinName)</code>：</li>
+<li>用 <code>egret.getDefinitionByName()</code> 找類別；空字串 = <code>BaseReelIcon</code>；找不到或不是 <code>BaseReelIcon</code> 系列 → throw（訊息含名稱），<strong>在清掉現有空殼之前</strong>檢查</li>
+<li>有 <code>iconSkinName</code> 才設 <code>skinName</code></li>
+<li>方向由本類別交給 <code>setupCell()</code></li>
+<li><code>BaseReelIcon.setupCell(cellPitch, exitTowardPositiveAxis, vertical)</code>，新增唯讀 getter <code>exitTowardPositiveAxis</code>、<code>vertical</code></li>
+<li><code>TestReelIcon</code>：拿掉建構子參數，改讀基底 getter；<code>TestSlotMachine</code>：改傳 <code>{ iconClass: &quot;slot_test.TestReelIcon&quot; }</code>，刪除 <code>createIcon()</code></li>
+<li><code>BaseDropReel</code>：不再掛 <code>BaseMovement.onValueChanged</code>；<code>update()</code> 每組推完移動後，把 <code>movement.value</code> 寫進該組每一格，全部推完再 <code>syncAllIcons()</code>。已確認 <code>moveTo()</code> 只排指令、不會當場寫值，行為和原本一樣</li>
+</ul>
+
+<p><strong>和 plan 不同的兩處（都是往更簡單、更安全的方向）</strong></p>
+
+<ol>
+<li><code>initializeIcons()</code> 不另外收兩個方向參數：<code>ReelIconManager</code> 本身就是方向的唯一來源，由它直接交給 <code>setupCell()</code></li>
+<li><code>configureIconDisplay()</code> 原訂先寫欄位再建立；實測發現類別錯誤時欄位會留下錯的值，改成建立成功才寫回</li>
+</ol>
+
+<h2 id="review-status">Review Status</h2>
+
+<ul>
+<li>未另做獨立 code review；建議 Task 4 結束後對 Task 2～4 一起 review（同 Phase 2 checkpoint）</li>
+</ul>
+
+<h2 id="verification-evidence">Verification Evidence</h2>
+
+<ul>
+<li>TypeScript compile：<code>TypeScript 2.4.2 - 8 error(s)</code>，與基準相同</li>
+<li>搜尋：Drop／test 內 <code>iconFactory|ReelIconFactory|onValueChanged</code> 0 筆；<code>src</code> 內 <code>iconFactory|ReelIconFactory|createIcon</code> 0 筆</li>
+<li>打包：成功、無錯誤</li>
+<li>瀏覽器（JS 每幀推進，同 Phase 2；console 無錯誤）：</li>
+<li>四種方向（垂直正、垂直反、水平正、水平反）各轉一次：停輪、順序、聽牌正常；每軸 9 個 <code>TestReelIcon</code>，每個空殼的方向與所屬軸一致（不一致 0 個）</li>
+<li>大圖延伸：正向偏移 0；反向偏移 = 格長 − 大圖長（2 格 −128、3 格 −256）；垂直改 y、水平改 x —— 與 <code>TestReelIcon</code> 原本的算法一致</li>
+<li>錯的 <code>iconClass</code>：<code>&quot;slot_test.NotExist&quot;</code>、<code>&quot;egret.Bitmap&quot;</code> 都 throw，訊息含名稱；欄位仍是 <code>slot_test.TestReelIcon</code>，9 個空殼仍是原本那 9 個</li>
+<li>空字串 → 9 個 <code>BaseReelIcon</code>；改回 <code>slot_test.TestReelIcon</code> → 恢復，方向正確</li>
+<li>錯誤類別改用 JS 直接呼叫 <code>configureIconDisplay()</code> 測，沒有照 plan 改原始碼再打包（走的是同一段程式碼）</li>
+<li>沒驗到：<code>iconSkinName</code>（專案沒有空殼用的 skin）；掉落模組（沒有場景在用，只有型別檢查）</li>
+</ul>
+
+<h2 id="remaining-risk">Remaining Risk</h2>
+
+<ul>
+<li>既有問題、這次沒有改：<code>BaseReel.init()</code> 在已有空殼時再以不同方向呼叫，空殼上記的方向不會更新。改寫前 <code>TestReelIcon</code> 在建構時記方向，也有同樣的問題。測試場景切換方向是整台重建，碰不到這個情況</li>
+<li>空殼類別靠 <code>getDefinitionByName</code> 找全域名稱：類別所在檔案一定要被打包進去（目前打包工具會收全部未模組化的檔案，實測可用）</li>
+<li>掉落單軸的主動讀值只有型別檢查，要等掉落有場景時才能在畫面上確認</li>
+</ul>
+
+<h2 id="user-approval-required">User Approval Required</h2>
+
+<ul>
+<li>Required: true</li>
+<li>Blocking: true</li>
+<li>Reason: Every checkpoint requires explicit user approval before the workflow may continue.</li>
+</ul>
+
+<h2 id="approval-basis">Approval Basis</h2>
+
+<ul>
+<li>[x] Current workflow state is understood.</li>
+<li>[x] Current phase status is documented in this checkpoint or the relevant phase artifact.</li>
+<li>[x] Review status is documented or explicitly not required for this scope.</li>
+<li>[x] Verification evidence is documented or the remaining verification gap is listed.</li>
+<li>[x] Workspace reconciliation is acceptable or the drift is listed as a blocker.</li>
+<li>[x] No unresolved blocking issue remains, or the blocker is listed below.</li>
+<li>[x] Runtime state has been synced to <code>run-workflow/workflow-state.json</code>.</li>
+</ul>
+
+<h2 id="confirmation-checklist">Confirmation Checklist</h2>
+
+<ul>
+<li>[ ] The checkpoint summary is accurate.</li>
+<li>[ ] The listed completed tasks match the actual work.</li>
+<li>[ ] The verification evidence is acceptable.</li>
+<li>[ ] The remaining risks are acceptable or need revision.</li>
+<li>[ ] The proposed next operation is acceptable.</li>
+</ul>
+
+<h2 id="proposed-operation-steps">Proposed Operation Steps</h2>
+
+<ol>
+<li>Phase 3 標為 DONE</li>
+<li>寫 phase-4 handoff（plan Task 4：manager 改寫 —— 去 <code>abstract</code>／泛型／<code>unknown</code>／<code>hook.call</code>；<code>init(roll, drop)</code> 收介面、<code>cleanup()</code> 移除監聽；<code>startSpin()</code> 的 Promise 不再丟掉）</li>
+<li>執行 Task 4，型別檢查、搜尋檢查後寫 phase-4 checkpoint（manager 沒有場景在用，瀏覽器無從驗證），停下等同意</li>
+</ol>
+
+<h2 id="next-available-actions">Next Available Actions</h2>
+
+<ol>
+<li>同意，進 Phase 4</li>
+<li>先 commit 再進 Phase 4</li>
+<li>修改本 checkpoint 或 Phase 4 做法／暫停／取消</li>
+</ol>
+
+<h2 id="recommended-next-step">Recommended Next Step</h2>
+
+<ul>
+<li>進 Phase 4</li>
+</ul>
+
+<h2 id="user-decision-needed">User Decision Needed</h2>
+
+<p>Please confirm one of:</p>
+
+<ol>
+<li>Approve and continue.</li>
+<li>Revise checkpoint, checklist, or proposed operation steps.</li>
+<li>Pause workflow.</li>
+<li>Cancel workflow.</li>
+</ol>
+    </main>
+  </div>
+</body>
+</html>

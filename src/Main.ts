@@ -27,8 +27,6 @@
 //
 //////////////////////////////////////////////////////////////////////////////////////
 
-import { SlotMachineScene } from "./test/SlotMachineScene";
-
 /**
  * 專案進入點。
  *
@@ -107,6 +105,6 @@ class Main extends eui.UILayer {
 
         await RES.loadGroup("symbol");
 
-        this.addChild(new SlotMachineScene());
+        this.addChild(new slot_test.SlotMachineScene());
     }
 }

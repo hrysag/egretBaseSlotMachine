@@ -36,6 +36,7 @@ import { RollRoundManager } from "../src/SlotMachine/Manager/RollRoundManager";
 import { DropRoundManager } from "../src/SlotMachine/Manager/DropRoundManager";
 import {
     RoundData,
+    RoundReelEventContext,
     RoundStage,
     RoundStepContext,
 } from "../src/SlotMachine/Manager/Data/RoundData";
@@ -4289,6 +4290,135 @@ class TestDropManager extends DropRoundManager<string> {
     }
 }
 
+function reelEventLabel(context: RoundReelEventContext<string>): string {
+    return context.round === null
+        ? `pending${context.stepIndex}`
+        : `${context.round.state}:${context.stepIndex}`;
+}
+
+/** §13e：記下逐軸事件與附帶的 context；可指定某個事件回傳要等的 Promise。 */
+class EventRollManager extends RollRoundManager<string> {
+    public readonly log: string[] = [];
+    public readonly holds: { [event: string]: Promise<void> } = {};
+    public rejectOnStop = false;
+    public listenReel?: number;
+
+    public constructor(
+        machines: RoundManagerMachines,
+        private readonly _queue: RoundSource[],
+    ) {
+        super(machines);
+    }
+
+    protected nextRound(): Promise<RoundData<string> | null> {
+        const next = this._queue.shift();
+        return next !== undefined ? next() : Promise.resolve(null);
+    }
+
+    protected getSpinMode(): string {
+        return "normal";
+    }
+
+    protected onBeforeStep(context: RoundStepContext<string>): Promise<void> {
+        if (this.listenReel !== undefined && context.round.state === "NG") {
+            (this.rollMachine as BaseSlotMachine).setListenReels([
+                { reelIndex: this.listenReel, duration: 0.3, speedMultiplier: 1 },
+            ]);
+        }
+        return Promise.resolve();
+    }
+
+    protected onAfterStep(context: RoundStepContext<string>): Promise<void> {
+        this.log.push(`4:${context.round.state}:${context.stepIndex}`);
+        return Promise.resolve();
+    }
+
+    protected onReelStarted(
+        reelIndex: number,
+        reel: BaseReel,
+        context: RoundReelEventContext<string>,
+    ): Promise<void> {
+        return this.record(`start:${reelIndex}:${reelEventLabel(context)}`);
+    }
+
+    protected onReelStopped(
+        reelIndex: number,
+        reel: BaseReel,
+        mode: unknown,
+        context: RoundReelEventContext<string>,
+    ): Promise<void> {
+        if (this.rejectOnStop) {
+            return Promise.reject(new Error("reel hook failed"));
+        }
+        return this.record(`stop:${reelIndex}:${reelEventLabel(context)}`);
+    }
+
+    protected onListenStart(
+        reelIndex: number,
+        reel: BaseReel,
+        context: RoundReelEventContext<string>,
+    ): Promise<void> {
+        return this.record(`listenStart:${reelIndex}:${reelEventLabel(context)}`);
+    }
+
+    protected onListenEnd(
+        reelIndex: number,
+        reel: BaseReel,
+        context: RoundReelEventContext<string>,
+    ): Promise<void> {
+        return this.record(`listenEnd:${reelIndex}:${reelEventLabel(context)}`);
+    }
+
+    private record(entry: string): Promise<void> {
+        this.log.push(entry);
+        const hold = this.holds[entry];
+        return hold !== undefined ? hold : Promise.resolve();
+    }
+}
+
+/** §13e：掉落機台的逐軸事件。 */
+class EventDropManager extends DropRoundManager<string> {
+    public readonly log: string[] = [];
+
+    public constructor(
+        machines: RoundManagerMachines,
+        private readonly _queue: RoundSource[],
+    ) {
+        super(machines);
+    }
+
+    protected nextRound(): Promise<RoundData<string> | null> {
+        const next = this._queue.shift();
+        return next !== undefined ? next() : Promise.resolve(null);
+    }
+
+    protected onReelDropStarted(
+        reelIndex: number,
+        reel: BaseDropReel,
+        context: RoundReelEventContext<string>,
+    ): Promise<void> {
+        this.log.push(`dropStart:${reelIndex}:${reelEventLabel(context)}`);
+        return Promise.resolve();
+    }
+
+    protected onReelDropCompleted(
+        reelIndex: number,
+        reel: BaseDropReel,
+        context: RoundReelEventContext<string>,
+    ): Promise<void> {
+        this.log.push(`dropDone:${reelIndex}:${reelEventLabel(context)}`);
+        return Promise.resolve();
+    }
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve: () => void = () => undefined;
+    const promise = new Promise<void>((done) => {
+        resolve = done;
+    });
+    return { promise, resolve };
+}
+
 /** 同時推進滾輪與掉落機台，直到條件成立或超時。 */
 async function driveUntil(
     machines: { roll?: HeadlessSlotMachine; drop?: HeadlessDropMachine },
@@ -4567,6 +4697,141 @@ async function runRoundManagerSection(): Promise<void> {
         });
         await driveUntil({ roll }, () => rejected !== "", 3);
         check("round 有消除但沒給掉落機台 → reject", rejected, "A round with cascades requires a drop machine.");
+    }
+
+    group("13e. 逐軸事件轉給遊戲（§10.5）：附 context、回傳的 Promise 在環節 4 之前等完");
+
+    {
+        const bounce: ReelEffectConfig = {
+            enabled: true,
+            distance: 20,
+            outwardDuration: 0.1,
+            returnDuration: 0.1,
+        };
+        const roll = createMachine(
+            3,
+            [timing(0, 0, 0.5), timing(1, 0.1, 0.5), timing(2, 0.1, 0.5)],
+            false,
+            undefined,
+            undefined,
+            undefined,
+            bounce,
+        );
+        let giveFirst: (round: RoundData<string>) => void = () => undefined;
+        const firstRound = new Promise<RoundData<string>>((resolve) => {
+            giveFirst = resolve;
+        });
+        const ng = boardOf([1, 2, 3]);
+        const fg = boardOf([4, 4, 4]);
+        const manager = new EventRollManager({ roll }, [
+            () => firstRound,
+            () => Promise.resolve({ state: "FG", board: [fg, fg, fg] }),
+        ]);
+        manager.listenReel = 2;
+        const startHold = deferred();
+        const stopHold = deferred();
+        manager.holds["start:0:pending-1"] = startHold.promise;
+        manager.holds["stop:1:FG:0"] = stopHold.promise;
+
+        let done = false;
+        manager.startGame().then(() => {
+            done = true;
+        });
+        await driveUntil({ roll }, () => false, 0.3);
+        giveFirst({ state: "NG", board: [ng, ng, ng] });
+
+        const settled = () => !roll.spinning
+            && roll.reelList.every((reel) => !reel.stopEffectActive);
+        await driveUntil({ roll }, () => manager.log.indexOf("stop:2:NG:0") >= 0 && settled());
+        await driveUntil({ roll }, () => false, 0.5);
+        check(
+            "資料到之前的起轉 Promise 還沒完成：NG 已全停、回彈播完，仍停在環節 3",
+            [manager.currentStage, manager.log.indexOf("4:NG:0")],
+            [RoundStage.Step, -1],
+        );
+
+        startHold.resolve();
+        await driveUntil({ roll }, () => manager.log.indexOf("stop:2:FG:0") >= 0 && settled());
+        await driveUntil({ roll }, () => false, 0.5);
+        check(
+            "FG 某軸停下回傳的 Promise 還沒完成：全停、回彈播完，仍停在環節 3",
+            [manager.currentStage, manager.log.indexOf("4:FG:0"), done],
+            [RoundStage.Step, -1, false],
+        );
+
+        stopHold.resolve();
+        const finished = await driveUntil({ roll }, () => done, 2);
+        check("Promise 完成後進環節 4，整局走完", [finished, manager.log.indexOf("4:FG:0") >= 0], [true, true]);
+        check(
+            "起轉：第一個 round 資料未到時 round = null、stepIndex = -1；FG 起轉附 FG 的 context",
+            manager.log.filter((entry) => entry.indexOf("start:") === 0),
+            ["start:0:pending-1", "start:1:pending-1", "start:2:pending-1", "start:0:FG:0", "start:1:FG:0", "start:2:FG:0"],
+        );
+        check(
+            "停下與聽牌：附所在 round 的 context",
+            manager.log.filter((entry) => entry.indexOf("stop:") === 0 || entry.indexOf("listen") === 0),
+            [
+                "stop:0:NG:0", "stop:1:NG:0", "listenStart:2:NG:0", "stop:2:NG:0", "listenEnd:2:NG:0",
+                "stop:0:FG:0", "stop:1:FG:0", "stop:2:FG:0",
+            ],
+        );
+    }
+
+    {
+        const drop = createDropMachine();
+        const manager = new EventDropManager({ drop }, [
+            () => Promise.resolve({
+                state: "NG",
+                board: [boardOf([4, 4, 4]), boardOf([2, 3, 4]), boardOf([1, 1, 2])],
+                cascades: [{
+                    removePositions: [[2], [], [0, 1]],
+                    refillCells: [boardOf([2]), [], boardOf([3, 3])],
+                }],
+            }),
+        ]);
+        let done = false;
+        manager.startGame().then(() => {
+            done = true;
+        });
+        const finished = await driveUntil({ drop }, () => done);
+        check(
+            "掉落：掉出、掉入附第 0 步，消除補牌附第 1 步；沒要消的軸不發",
+            [finished, manager.log],
+            [
+                true,
+                [
+                    "dropStart:0:NG:0", "dropStart:1:NG:0", "dropStart:2:NG:0",
+                    "dropDone:0:NG:0", "dropDone:1:NG:0", "dropDone:2:NG:0",
+                    "dropStart:0:NG:0", "dropStart:1:NG:0", "dropStart:2:NG:0",
+                    "dropDone:0:NG:0", "dropDone:1:NG:0", "dropDone:2:NG:0",
+                    "dropStart:0:NG:1", "dropStart:2:NG:1",
+                    "dropDone:0:NG:1", "dropDone:2:NG:1",
+                ],
+            ],
+        );
+    }
+
+    {
+        const roll = createMachine(3, [
+            timing(0, 0, 0.5),
+            timing(1, 0.1, 0.5),
+            timing(2, 0.1, 0.5),
+        ]);
+        const board = boardOf([1, 2, 3]);
+        const manager = new EventRollManager({ roll }, [
+            () => Promise.resolve({ state: "NG", board: [board, board, board] }),
+        ]);
+        manager.rejectOnStop = true;
+        let rejected = "";
+        manager.startGame().catch((error: Error) => {
+            rejected = error.message;
+        });
+        await driveUntil({ roll }, () => rejected !== "", 3);
+        check(
+            "逐軸事件方法回傳 reject：機台照常停完，這一局 reject",
+            [rejected, roll.spinning, manager.playing],
+            ["reel hook failed", false, false],
+        );
     }
 
     checkThrows("RollRoundManager 沒給滾輪機台 → throw", () => {

@@ -11,7 +11,7 @@
 > **本文一律以「類別.成員」指路，不寫行號。**
 > §1～§6 是讀原始碼得到的事實；§7 是讀的時候看到、不建議照抄的地方；§8 對照我們現有的機台；§9 是待定問題，逐題定案。
 >
-> **目前進度（2026-09-29）**：G1～G12 全部定案。未定、另外談：切分頁的處理（G7）；出錯後的收拾（G12）；各入口／環節／回呼的正式名稱與參數（實作時）。
+> **目前進度（2026-09-29）**：G1～G12 全部定案；環節 3 的逐軸事件轉手已定案並實作（§10.5，斷言 357 全過，未 commit）。未定、另外談：切分頁的處理（G7）；出錯後的收拾（G12）；各入口／環節／回呼的正式名稱與參數（實作時）。
 > 定案帶出的機台工作（2026-09-29 決定先做，再寫 `BaseRoundManager`）：滾輪機台補「全部完全停下」等待入口（G9）；掉落機台補急停「直接到位」（G6）與逐軸通知（G5）。
 > **三項都已實作（2026-09-29）**，斷言 314 → **333** 全過，每項都做過還原確認；專案 tsconfig（es5）編譯零錯誤。
 > **`BaseRoundManager` 骨架已完成（2026-09-29，§10）**，斷言 → **350** 全過。以上全部未 commit。
@@ -562,7 +562,7 @@ round 資料要直接給這兩樣，還是只給每次消除後的盤面、由�
 - **Stop 表演中**（G6）：manager 呼叫可覆寫的「玩家要跳過」方法，遊戲自己收尾
 - **掉落機台缺席而 round 有消除** → throw（G2）
 
-未定、骨架先不做：環節 3 的逐軸事件怎麼轉給遊戲（目前遊戲可直接掛機台的 `onReelStopped` / `onReelDropCompleted`）；出錯後的收拾（G12）。
+未定、骨架先不做：環節 3 的逐軸事件怎麼轉給遊戲（目前遊戲可直接掛機台的 `onReelStopped` / `onReelDropCompleted`；**2026-09-29 已定案，見 §10.5**）；出錯後的收拾（G12）。
 
 ### 10.3 實作（2026-09-29，骨架已完成）
 
@@ -578,3 +578,67 @@ round 資料要直接給這兩樣，還是只給每次消除後的盤面、由�
 - 斷言 333 → **350**（§13a～13d，17 項）：起轉早於資料、兩個 round 的環節順序（NG 資料到時已在轉、FG 到環節 3 才起轉、環節 4 在回彈播完之後）、通知與整局結束的先後、掉落的消除重複 2～4、Stop 三種分流、出錯 reject、守門
 - 還原確認：不等完全停下 → 紅 1；一局開始不先起轉 → 紅 4；表演中 Stop 不通知遊戲 → 紅 1；不走消除 → 紅 2
 - 專案 tsconfig（es5）編譯零錯誤。測試場景還沒接上 manager，沒在瀏覽器跑過
+
+### 10.4 待辦
+
+- [ ] **測試場景改用 manager 來跑**（2026-09-29 列入）：`src/test/SlotMachineScene.ts` 目前自己驅動機台（開轉、模擬伺服器延遲、送結果、急停），改成透過 `RollRoundManager` 跑，才能在瀏覽器確認 manager 的流程
+- [ ] **掉落的測試按鈕與畫面**（2026-10-01 列入）：測試場景目前只有滾輪機台，沒有掉落示範（Drop-Module-Readiness §7.7「還沒處理」）。掉落至今只在瀏覽器用 JS 臨時組機台驗過事件、盤面與急停（round-manager-followup Phase 5），沒看過實際畫面
+- [x] 環節 3 的逐軸事件怎麼轉給遊戲 → 已定案、已實作（§10.5）
+- [ ] 出錯後機台與畫面怎麼收拾（G12）
+- [ ] 切分頁再切回來的處理（G7）
+- [ ] 各入口／環節／回呼的正式名稱（目前暫定）
+
+### 10.5 環節 3 的逐軸事件怎麼轉給遊戲 → 已定案、已實作（2026-09-29）
+
+**問題**：環節 3 進行中，機台會一軸一軸發事件（滾輪：某軸起轉、某軸停下、聽牌開始／結束；掉落：某軸開始掉、某軸掉完），遊戲要靠它們做表演（例：scatter 停下就播出場動畫）。
+骨架時的現況是遊戲直接掛機台回呼，有兩個缺點：
+
+1. 事件只帶「第幾軸」，不知道現在是哪個 round、第幾次消除
+2. 1016 的做法是單軸停下就開始播出場動畫、全部播完才進中獎表演（`getEndBouncePromise()` 收集 → `beforeAllReelRollEnd()` 等完，§2）；直接掛回呼的話，每款遊戲都要自己收集、自己在環節 4 等
+
+**→ 定案：manager 接下機台的逐軸回呼，轉成可覆寫的方法給遊戲。**
+
+- manager 掛上機台的逐軸回呼，轉成 `BaseRoundManager` 上可覆寫的方法，參數加上目前的 round 與第幾步（context）
+  - 滾輪：某軸起轉、某軸停下、聽牌開始、聽牌結束
+  - 掉落：某軸開始掉、某軸掉完
+- **方法可以回傳 Promise**：manager 收集起來，**全部完成才進環節 4**。1016「停下就播出場、全部播完才往下」直接內建
+- **機台不等這些 Promise**，停輪與掉落照常進行，不被表演拖慢
+- 沒覆寫的方法預設什麼都不做
+- 代價：機台上這幾個回呼從此歸 manager 使用，**遊戲不能再直接掛**；要逐軸事件就覆寫 manager 的方法
+
+**起轉照樣送（使用者定案）**：滾輪第一個 round 是一局開始就起轉，那時資料還沒到、沒有 round 可以附。
+起轉事件照樣轉給遊戲，context 以 **-1 或 0 之類的值** 標示「第一個 round 的資料還沒到」；具體用哪個值、放在哪個欄位，實作時定。
+
+**實作（2026-09-29，已完成）**
+
+- `BaseRoundManager` 建構時佔用機台的 `onReelStarted`、`onReelStopped`、`onListenStart`、`onListenEnd`（滾輪）與 `onReelDropStarted`、`onReelDropCompleted`（掉落），轉成同名的可覆寫方法，最後一個參數是 context。`onAllReelsStarted` / `onAllReelsStopped` 不是逐軸事件，沒有佔用
+- context 型別 `RoundReelEventContext`（`Manager/Data/RoundData.ts`）：`{ round, stepIndex }`；**資料未到時 `round = null`、`stepIndex = ROUND_DATA_PENDING`（-1）**。事件發生時不在任何環節（例如等下一個 round 的資料）也給這個
+- 方法回傳 `Promise<void> | void`（→ 已改成一律 `Promise<void>`，見下方修正）；manager 收集 Promise，在環節 3 的機台動作與 `onStep()` 都完成後等完，才離開環節 3、進環節 4。等的期間又收到新的也一起等
+- 資料到之前的起轉 Promise 併入第一個 round 環節 3 結束前一起等
+- 遊戲的方法丟錯（同步丟或 Promise reject）**不往機台丟**，改成等 Promise 時讓這一局 reject（G12）（→ 已改：同步丟不再擋，見下方修正）
+- 斷言 350 → **357**（§13e，7 項）。還原確認：不等逐軸 Promise → 紅 3 項；同步丟錯直接往機台丟 → 紅 1 項（機台卡在轉動中）
+
+**修正（2026-09-29，使用者要求）：不用匿名函式註冊回呼、不多包一層；遊戲要丟錯請回傳 reject 的 Promise。**
+
+上面的實作用匿名函式掛機台回呼，裡面再把一個函式傳給轉手用的 `forwardReelEvent()`，違反工作規範「不使用匿名函式直接註冊 Callback」
+（Cocos `run-workflow/slot-machine-controller/slot-machine-controller-spec.md` §10），也多包了一層。改成：
+
+- **有名字的 handler 欄位，直接指派**：照 Cocos 原版（`SingleReelTest` 的 `_rollStoppedHandler`）。每個事件一個 `private readonly _xxxHandler`，
+  handler 內直接取 context、呼叫遊戲的同名方法、收下 Promise；`bindMachineEvents()` 只剩 `roll.onReelStopped = this._reelStoppedHandler;` 這種指派
+- 去掉 `forwardReelEvent()` 與它的 try/catch
+- 同一檔其他匿名函式一併改掉：`startGame()` 的 `.then(() => …, (error) => …)` 改成一般的 async 寫法；`playRound()` 傳給 `playStep()` 的 `() => this.presentBoard(…)`、`() => dropRefill(…)` 改成 `playStep()` 依第幾步自己呼叫機台
+- **逐軸事件方法一律回傳 `Promise<void>`**，與五個環節的方法相同（預設 `Promise.resolve()`）；遊戲覆寫時寫成 `async` 最簡單
+
+**遊戲要丟錯：回傳 reject 的 Promise（寫成 `async` 的方法，裡面 throw 會自動變成這種）。**
+
+| 遊戲怎麼丟 | 結果 |
+|---|---|
+| 回傳 reject 的 Promise（含 `async` 方法內 throw） | 機台不看回傳值，照常停輪、跑完；manager 在環節 3 結束前等到 reject → 這一局停下、`startGame()` reject（G12）。**機台不用做任何處理** |
+| 方法不是 `async` 又直接 throw | 錯誤從機台呼叫回呼那一行往上丟，打斷機台這一幀的推進，機台卡在半路（實測：卡在轉動中）。**框架不擋**，方法註解寫明規則 |
+
+- reject 如果早於 manager 去等（例如第一軸一停就 reject），瀏覽器會先印「Uncaught (in promise)」。manager 收下 Promise 時先掛一個不做事的 catch 消掉它，等的時候照樣丟錯；這個 catch 也用有名字的 handler
+- 斷言：「同步丟錯不往機台丟」那一項改成測「回傳 reject → 機台照常停完、這一局 reject」
+
+**修正已實作（2026-09-29）**：斷言維持 **357** 全過，專案 tsconfig（es5）編譯零錯誤。
+還原確認：拿掉 handler 先掛的 catch → Node 因「沒處理的 reject」直接中止（連統計都印不出來），所以這個 catch 必要。
+`Manager/` 內剩下的 `=>` 只有具名 handler 欄位本身、型別宣告，與 `DropRoundManager` 裡 `reelList.every((reel) => …)` 陣列判斷（不是註冊回呼，沒動）。

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 2 Handoff</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phase 2 Handoff</h1>
+    <p>Source: round-manager-followup-phase-2-handoff.md</p>
+    <p>Generated: 2026-10-01 00:58:52</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#phase-execution-handoffphase-2-自訂事件與機台介面">Phase Execution Handoff：Phase 2 自訂事件與機台介面</a></li>
+<li class="level-2"><a href="#required-superpower">Required Superpower</a></li>
+<li class="level-2"><a href="#phase">Phase</a></li>
+<li class="level-2"><a href="#runtime-gate">Runtime Gate</a></li>
+<li class="level-2"><a href="#implementation-boundary">Implementation Boundary</a></li>
+<li class="level-2"><a href="#allowed-changes">Allowed Changes</a></li>
+<li class="level-2"><a href="#forbidden-changes">Forbidden Changes</a></li>
+<li class="level-2"><a href="#public-api-notes">Public API Notes</a></li>
+<li class="level-2"><a href="#handoff-rules">Handoff Rules</a></li>
+<li class="level-2"><a href="#verification">Verification</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="phase-execution-handoffphase-2-自訂事件與機台介面">Phase Execution Handoff：Phase 2 自訂事件與機台介面</h1>
+
+<h2 id="required-superpower">Required Superpower</h2>
+
+<p><code>superpowers:executing-plans</code>（inline 執行，同 Phase 1）</p>
+
+<h2 id="phase">Phase</h2>
+
+<ul>
+<li>Name：Phase 2 自訂事件與機台介面（plan Task 2）</li>
+<li>Goal：跨模組的回呼屬性改成 <code>egret.Event</code> 子類別的自訂事件；新增兩個機台介面。發送位置、順序與原本回呼相同</li>
+<li>Mode：FAST</li>
+<li>Source plan：<code>run-workflow/round-manager-followup/round-manager-followup-plan.md</code> Task 2</li>
+<li>Spec：§5（自訂事件）、§8.1（介面）</li>
+<li>Approved skeleton report：無（FAST）</li>
+</ul>
+
+<h2 id="runtime-gate">Runtime Gate</h2>
+
+<ul>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Current workflow state：IMPLEMENTATION</li>
+<li>Active phase：phase-2</li>
+<li>Workspace reconciliation：Phase 1 的修改尚未 commit（使用者選擇直接進 Phase 2），屬本輪起點，RECONCILED</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="implementation-boundary">Implementation Boundary</h2>
+
+<p><code>game-implementation-boundary</code>（Egret）：<code>typescript.md</code>、<code>project-rules.md</code>（2026-10-01 重讀）。重點：只用 namespace；TS 2.4.2；事件監聽需同一函式參考才能移除；禁止跨類別 callback（使用者裁定：跨模組禁止）。</p>
+
+<h2 id="allowed-changes">Allowed Changes</h2>
+
+<ul>
+<li>Create：<code>Core/Event/SlotMachineEvent.ts</code>、<code>Core/Event/ReelEvent.ts</code>、<code>Core/ISlotMachine.ts</code>、<code>Drop/Event/DropEvent.ts</code>、<code>Drop/IDropSlotMachine.ts</code>、<code>Manager/Event/RoundEvent.ts</code>（皆在 <code>src/SlotMachine/</code> 下，LF）</li>
+<li>Modify：<code>Core/BaseSlotMachine.ts</code>、<code>Core/Reel/BaseReel.ts</code>、<code>Drop/BaseDropSlotMachine.ts</code>、<code>Drop/BaseDropReel.ts</code>、<code>Manager/BaseRoundManager.ts</code>、<code>Manager/DropRoundManager.ts</code>、<code>test/SlotMachineScene.ts</code></li>
+<li>上述檔案內提到已移除回呼屬性的註解，同步改成事件名稱</li>
+</ul>
+
+<h2 id="forbidden-changes">Forbidden Changes</h2>
+
+<ul>
+<li><code>BaseMovement</code> 的同模組回呼（<code>onValueChanged</code> 等）、<code>TestSlotMachine.onUpdate</code>：保留（spec §5.3）</li>
+<li><code>BaseDropReel</code> 的 <code>onValueChanged</code> 改寫、icon、manager 的 <code>init()</code>／介面注入／去泛型、其他匿名函式：分屬 Task 3～6，本階段不動</li>
+<li><code>tests/<strong></code>、<code>scripts/</strong></code>、<code>tsconfig.json</code></li>
+</ul>
+
+<h2 id="public-api-notes">Public API Notes</h2>
+
+<ul>
+<li>移除的回呼屬性（經使用者同意的 API 變更）：</li>
+<li><code>BaseSlotMachine</code>：<code>onReelStarted</code>、<code>onAllReelsStarted</code>、<code>onReelStopped</code>、<code>onAllReelsStopped</code>、<code>onListenStart</code>、<code>onListenEnd</code></li>
+<li><code>BaseReel</code>：<code>onHalfCellComplete</code>、<code>onCellMovementComplete</code>、<code>onRollStarted</code>、<code>onRollStopped</code>、<code>onStopEffectStarted</code>、<code>onStopEffectCompleted</code>、<code>onStartEffectCompleted</code>、<code>onReelDataChanged</code></li>
+<li><code>BaseDropSlotMachine</code>：<code>onReelDropStarted</code>、<code>onReelDropCompleted</code>；<code>BaseDropReel</code>：<code>onDropStarted</code>、<code>onDropCompleted</code></li>
+<li><code>BaseRoundManager</code>：<code>onStageEnter</code>、<code>onGameEnd</code></li>
+<li>新增：<code>BaseSlotMachine implements ISlotMachine</code>、<code>BaseDropSlotMachine implements IDropSlotMachine</code>、<code>BaseDropSlotMachine.allReelsDroppedOut</code>、<code>BaseRoundManager extends egret.EventDispatcher</code></li>
+<li>manager 的建構子收機台維持到 Task 4；本階段 manager 尚無 <code>cleanup()</code>，事件監聽的解除在 Task 4 補</li>
+</ul>
+
+<h2 id="handoff-rules">Handoff Rules</h2>
+
+<ul>
+<li>發送：每個發送類別一個私有發送方法，先 <code>hasEventListener(type)</code>，沒人聽就不 <code>new</code></li>
+<li>原本 <code>if (this.onXxx !== undefined) { this.onXxx(…); }</code> 就地換成發送方法，<strong>位置不動</strong>；原本外圍的 <code>try/finally</code> 保留</li>
+<li>接收：具名方法或具名欄位；<code>addEventListener(type, listener, this)</code> 與 <code>removeEventListener</code> 參數相同</li>
+<li>若必須改名或改結構才能編譯，停下回報</li>
+</ul>
+
+<h2 id="verification">Verification</h2>
+
+<ul>
+<li>TypeScript compile：<code>node run-workflow/round-manager-followup/check-ts242.js</code> → 只剩基準 8 個</li>
+<li>搜尋：<code>\.on[A-Z]\w*\s*=[^=]</code>（Drop、Manager、test）只剩 <code>onUpdate</code>；<code>public on\w+\?:</code>（SlotMachine）只剩 <code>BaseMovement</code> 三個</li>
+<li>打包：<code>egret build</code> 成功；<code>manifest.json</code> 被改就還原</li>
+<li>瀏覽器：一般／Turbo 開轉、急停、切換聽牌各一次；起轉／停輪／聽牌標記照常；切換軸數（重建機台）後標記仍正常（確認舊機台監聽已移除、新機台已掛上）</li>
+<li>Cleanup checks：場景重建機台前移除舊機台與舊軸的監聽</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

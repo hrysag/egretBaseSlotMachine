@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 4 Handoff</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phase 4 Handoff</h1>
+    <p>Source: round-manager-followup-phase-4-handoff.md</p>
+    <p>Generated: 2026-10-01 01:14:51</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#phase-execution-handoffphase-4-manager-改寫">Phase Execution Handoff：Phase 4 Manager 改寫</a></li>
+<li class="level-2"><a href="#required-superpower">Required Superpower</a></li>
+<li class="level-2"><a href="#phase">Phase</a></li>
+<li class="level-2"><a href="#runtime-gate">Runtime Gate</a></li>
+<li class="level-2"><a href="#implementation-boundary">Implementation Boundary</a></li>
+<li class="level-2"><a href="#allowed-changes">Allowed Changes</a></li>
+<li class="level-2"><a href="#forbidden-changes">Forbidden Changes</a></li>
+<li class="level-2"><a href="#public-api-notes經使用者同意的變更">Public API Notes（經使用者同意的變更）</a></li>
+<li class="level-2"><a href="#handoff-rules">Handoff Rules</a></li>
+<li class="level-2"><a href="#verification">Verification</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="phase-execution-handoffphase-4-manager-改寫">Phase Execution Handoff：Phase 4 Manager 改寫</h1>
+
+<h2 id="required-superpower">Required Superpower</h2>
+
+<p><code>superpowers:executing-plans</code>（inline 執行）</p>
+
+<h2 id="phase">Phase</h2>
+
+<ul>
+<li>Name：Phase 4 Manager 改寫（plan Task 4）</li>
+<li>Goal：<code>Manager/</code> 四個檔照 Cocos／Core 寫法與 Egret 規範改寫：去 <code>abstract</code>、泛型、<code>unknown</code>、<code>hook.call</code>；<code>init(roll, drop)</code> 收介面、<code>cleanup()</code> 移除監聽；起轉的 Promise 不再丟掉。流程（五個環節、逐軸事件、Stop 分流、全程 await）不變</li>
+<li>Mode：FAST</li>
+<li>Source plan：<code>run-workflow/round-manager-followup/round-manager-followup-plan.md</code> Task 4</li>
+<li>Spec：§8</li>
+</ul>
+
+<h2 id="runtime-gate">Runtime Gate</h2>
+
+<ul>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Current workflow state：IMPLEMENTATION</li>
+<li>Active phase：phase-4</li>
+<li>Workspace reconciliation：Phase 1～3 修改未 commit，RECONCILED</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="implementation-boundary">Implementation Boundary</h2>
+
+<p><code>game-implementation-boundary</code>（Egret）＋ 使用者對 manager 的寫法要求：不用匿名函式註冊、不把方法當值傳再 <code>.call</code>、不用 <code>abstract</code>／泛型、要遊戲實作的方法給預設實作並註明「留給繼承類別」、<code>init()</code> + <code>_inited</code> + <code>assertInitialized()</code> + <code>cleanup()</code>、一個參數一行、不隨手 <code>as</code>、不在 getter 裡臨時組物件、<code>throw new Error(</code> 換行寫訊息。</p>
+
+<h2 id="allowed-changes">Allowed Changes</h2>
+
+<ul>
+<li><code>Manager/BaseRoundManager.ts</code>、<code>Manager/RollRoundManager.ts</code>、<code>Manager/DropRoundManager.ts</code>、<code>Manager/Data/RoundData.ts</code>（LF）</li>
+<li><code>Manager/Event/RoundEvent.ts</code>：只在型別需要時跟著改</li>
+</ul>
+
+<h2 id="forbidden-changes">Forbidden Changes</h2>
+
+<ul>
+<li><code>Core/<strong></code>、<code>Drop/</strong></code>、<code>test/<strong></code>、<code>tests/</strong></code></li>
+<li>流程順序、事件發送時機</li>
+</ul>
+
+<h2 id="public-api-notes經使用者同意的變更">Public API Notes（經使用者同意的變更）</h2>
+
+<ul>
+<li>建構子收機台 → <code>init(roll: slot_core.ISlotMachine | null, drop: slot_drop.IDropSlotMachine | null)</code>；重複 <code>init()</code> throw；新增 <code>cleanup()</code></li>
+<li>刪除 <code>RoundManagerMachines</code>（只有 manager 的建構子在用）</li>
+<li>去泛型：<code>RoundData.state: any</code>；<code>RoundStepContext</code>、<code>RoundReelEventContext</code> 無型別參數</li>
+<li><code>ROUND_DATA_PENDING</code> → <code>RoundDataConst.PENDING_STEP_INDEX</code></li>
+<li><code>nextRound()</code> 預設回 <code>null</code>；<code>presentBoard()</code>、<code>RollRoundManager.getSpinMode()</code> 預設 throw</li>
+<li><code>rollMachine</code>／<code>dropMachine</code> 型別改介面，沒給為 <code>null</code>；<code>requireRollMachine()</code>／<code>requireDropMachine()</code> 回介面</li>
+</ul>
+
+<h2 id="handoff-rules">Handoff Rules</h2>
+
+<ul>
+<li>每個環節在呼叫處直接寫「進入 → await 對應方法 → 離開」，不經 <code>runStage()</code></li>
+<li>逐軸事件的 context：資料未到時用一個固定的 pending 物件（欄位），不每次新建</li>
+<li>起轉：<code>startSpin()</code> 的 Promise 存在欄位；<code>presentBoard()</code> 照原時機呼叫 <code>stopSpin()</code>，與起轉 Promise 用 <code>Promise.all</code> 一起等（<code>stopSpin()</code> 會先登記結果再等起轉，不能改成先等起轉才呼叫）</li>
+<li>壓「Uncaught (in promise)」的 <code>_ignoreRejectionHandler</code> 已是具名欄位，保留</li>
+<li>若必須改名或改結構才能編譯，停下回報</li>
+</ul>
+
+<h2 id="verification">Verification</h2>
+
+<ul>
+<li>型別檢查 → 只剩 <code>BaseDropSlotMachine</code> 的 <code>unknown</code> 與 <code>ReelAxisEffect</code> TS7017（2 個）</li>
+<li>搜尋：<code>abstract|unknown|\.call\(|&lt;TState</code> 0 筆；<code>constructor\(</code> 0 筆（<code>Manager/</code>，事件類別除外）；監聽 add／remove 成對</li>
+<li>打包成功；測試場景不受影響（開轉一次）</li>
+<li>manager 沒有場景在用，執行期流程無從在瀏覽器驗證（checkpoint 註明）</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

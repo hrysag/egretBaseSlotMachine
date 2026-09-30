@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 2 Checkpoint</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phase 2 Checkpoint</h1>
+    <p>Source: round-manager-followup-phase-2-checkpoint.md</p>
+    <p>Generated: 2026-10-01 00:58:53</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#workflow-checkpointphase-2-自訂事件與機台介面">Workflow Checkpoint：Phase 2 自訂事件與機台介面</a></li>
+<li class="level-2"><a href="#current-workflow">Current Workflow</a></li>
+<li class="level-2"><a href="#artifacts">Artifacts</a></li>
+<li class="level-2"><a href="#pause-cancel">Pause / Cancel</a></li>
+<li class="level-2"><a href="#workspace">Workspace</a></li>
+<li class="level-2"><a href="#completed-tasks">Completed Tasks</a></li>
+<li class="level-2"><a href="#review-status">Review Status</a></li>
+<li class="level-2"><a href="#verification-evidence">Verification Evidence</a></li>
+<li class="level-2"><a href="#remaining-risk">Remaining Risk</a></li>
+<li class="level-2"><a href="#user-approval-required">User Approval Required</a></li>
+<li class="level-2"><a href="#approval-basis">Approval Basis</a></li>
+<li class="level-2"><a href="#confirmation-checklist">Confirmation Checklist</a></li>
+<li class="level-2"><a href="#proposed-operation-steps">Proposed Operation Steps</a></li>
+<li class="level-2"><a href="#next-available-actions">Next Available Actions</a></li>
+<li class="level-2"><a href="#recommended-next-step">Recommended Next Step</a></li>
+<li class="level-2"><a href="#user-decision-needed">User Decision Needed</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="workflow-checkpointphase-2-自訂事件與機台介面">Workflow Checkpoint：Phase 2 自訂事件與機台介面</h1>
+
+<h2 id="current-workflow">Current Workflow</h2>
+
+<ul>
+<li>Mode：FAST</li>
+<li>State：IMPLEMENTATION</li>
+<li>Round topic：round-manager-followup</li>
+<li>Round folder：<code>run-workflow/round-manager-followup/</code></li>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Active phase：phase-2（plan Task 2）→ 狀態 <strong>VERIFIED</strong>，使用者同意後標 DONE（Phase 1 已 DONE）</li>
+<li>Archived：false</li>
+<li>Archive path：（無）</li>
+<li>Recovery source：runtime-state</li>
+</ul>
+
+<h2 id="artifacts">Artifacts</h2>
+
+<ul>
+<li>Spec：[round-manager-followup-spec.md](round-manager-followup-spec.md)</li>
+<li>Plan：[round-manager-followup-plan.md](round-manager-followup-plan.md)（Task 2 八個步驟已勾選）</li>
+<li>Phase handoff：[round-manager-followup-phase-2-handoff.md](round-manager-followup-phase-2-handoff.md)</li>
+<li>Last checkpoint：本檔（前一份：[round-manager-followup-phase-1-checkpoint.md](round-manager-followup-phase-1-checkpoint.md)）</li>
+<li>Last review：無獨立 review（見 Review Status）</li>
+<li>Last verification：本檔 Verification Evidence（2026-10-01）</li>
+<li>Last reconciliation：本檔 Workspace</li>
+</ul>
+
+<h2 id="pause-cancel">Pause / Cancel</h2>
+
+<ul>
+<li>isPaused：false</li>
+<li>isCancelled：false</li>
+<li>resumeAllowed：true</li>
+</ul>
+
+<h2 id="workspace">Workspace</h2>
+
+<ul>
+<li>Workspace reconciliation：<strong>RECONCILED</strong></li>
+<li>新增 6 檔：<code>Core/Event/SlotMachineEvent.ts</code>、<code>Core/Event/ReelEvent.ts</code>、<code>Core/ISlotMachine.ts</code>、<code>Drop/Event/DropEvent.ts</code>、<code>Drop/IDropSlotMachine.ts</code>、<code>Manager/Event/RoundEvent.ts</code>（LF）</li>
+<li>修改：<code>Core/BaseSlotMachine.ts</code>、<code>Core/Reel/BaseReel.ts</code>、<code>Drop/BaseDropSlotMachine.ts</code>、<code>Drop/BaseDropReel.ts</code>、<code>Manager/BaseRoundManager.ts</code>、<code>Manager/DropRoundManager.ts</code>、<code>test/SlotMachineScene.ts</code>，以及 <code>test/TestSlotMachine.ts</code> 一行註解（提到舊回呼名稱）</li>
+<li>換行：<code>BaseSlotMachine.ts</code> 一度被 <code>sed -i</code> 轉成 LF，已用 node 轉回 CRLF 並以 <code>file</code> 確認；其餘 CRLF 檔皆用 Edit 修改，確認仍為 CRLF</li>
+<li><code>manifest.json</code>：本次 build 未改動</li>
+<li>Phase 1 的修改仍未 commit；開工前就有的 <code>doc/</code>、<code>tests/CoreGeometry.test.ts</code> 修改與未追蹤檔不變</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="completed-tasks">Completed Tasks</h2>
+
+<ul>
+<li>事件類別：<code>slot_core.SlotMachineEvent</code>（6 種）、<code>slot_core.ReelEvent</code>（8 種）、<code>slot_drop.DropEvent</code>（機台 2 種＋單軸 2 種）、<code>slot_manager.RoundEvent</code>（2 種）；欄位皆有預設值，建構子只呼叫 <code>super</code></li>
+<li>介面：<code>slot_core.ISlotMachine</code>、<code>slot_drop.IDropSlotMachine</code>（皆繼承 <code>egret.IEventDispatcher</code>）；<code>BaseSlotMachine</code>、<code>BaseDropSlotMachine</code> 各自 <code>implements</code></li>
+<li><code>BaseDropSlotMachine.allReelsDroppedOut</code>（一般 <code>for</code> 迴圈）；<code>DropRoundManager</code> 改用它，去掉 <code>every</code> + 匿名函式</li>
+<li>發送端：每個類別的私有發送方法先 <code>hasEventListener</code>，沒人聽不 <code>new</code>；原本的呼叫位置與外圍 <code>try/finally</code> 不動</li>
+<li><code>BaseReel</code> 分三個：不帶資料、半格（<code>completedHalf</code>）、換資料（<code>runtime</code>、<code>previousData</code>）</li>
+<li><code>BaseRoundManager</code> 分兩個：<code>dispatchStageEnter()</code>、<code>dispatchGameEnd()</code>（<code>GAME_END</code> 仍在 <code>finishGame()</code> 之後、<code>startGame()</code> resolve 之前）</li>
+<li>移除 spec §5.2 全部 18 個回呼屬性，以及各 <code>cleanup()</code> 內清它們的行；<code>cleanup()</code> 註解補上「外部監聽由監聽者自己移除」</li>
+<li>接收端：</li>
+<li><code>BaseRoundManager</code> 改繼承 <code>egret.EventDispatcher</code>；對機台 <code>addEventListener</code> 6 個逐軸事件，handler 沿用既有具名欄位，參數改成事件物件；新增 <code>eventReelOf()</code>／<code>dropEventReelOf()</code>（事件缺軸時 throw）</li>
+<li><code>SlotMachineScene</code>：5 個機台事件、每軸 <code>CELL_MOVEMENT_COMPLETE</code> 改成具名方法；新增 <code>unwireMachineEvents()</code>，在重建機台（<code>unmountMachine()</code>）時、<code>machine.cleanup()</code> 之前以相同參數移除</li>
+<li>註解中提到舊回呼名稱的地方改成事件名稱</li>
+</ul>
+
+<h2 id="review-status">Review Status</h2>
+
+<ul>
+<li>未另做獨立 code review。自我對照：每個發送點只換呼叫、不移位置；監聽成對（場景 6 組 add／remove 參數相同）</li>
+<li>建議：Task 4（manager 改寫）結束後，對 Task 2～4 一起做一次 review</li>
+</ul>
+
+<h2 id="verification-evidence">Verification Evidence</h2>
+
+<ul>
+<li>TypeScript compile（<code>check-ts242.js</code>）：<code>TypeScript 2.4.2 - 8 error(s)</code>，與基準相同（<code>unknown</code> ×7、<code>ReelAxisEffect</code> TS7017 ×1）</li>
+<li>搜尋：</li>
+<li>Drop／Manager／test 內 <code>.onXxx =</code>：只剩 <code>BaseDropReel</code> 的 <code>movement.onValueChanged</code> 3 處（Task 3 處理）與 <code>SlotMachineScene</code> 的 <code>onUpdate</code>（同模組保留）</li>
+<li><code>public on…?:</code>：只剩 <code>BaseMovement</code> 3 個</li>
+<li><code>src/</code> 內已無任何被移除回呼的名稱</li>
+<li>相依方向、頂層 <code>import</code>／<code>export</code>：0 筆</li>
+<li>打包：<code>egret build</code> 成功、無錯誤（需設 <code>EGRET_PATH=D:/Egret_test/egret-core-master/egret-core-master</code>；plan 的驗證工具列漏了這一項）</li>
+<li>瀏覽器（<code>slot-debug</code>，console 無錯誤）：</li>
+<li>面板隱藏時畫面不推進，改用 JS 每幀呼叫機台 <code>update(1/60)</code>（每幀之間讓 await 續行跑完）推進；按鈕照常用滑鼠點擊</li>
+<li>一般（5 軸）：起轉 0／0.1／0.2／0.3／0.4 秒、停輪順序 0→1→2→3→4、聽牌 R1 0.884→2.382（長 1.498 秒）、全部停下</li>
+<li>Turbo：全軸 0 秒起轉、0.650 秒同時停</li>
+<li>急停（一般模式 0.5 秒時按）：記錄到急停、全部停下</li>
+<li>切換軸數 → 1 軸、3 軸（重建機台）：事件照常，停輪順序沒有重複 → 舊機台監聽已移除、新機台只掛一次</li>
+<li>切換聽牌 → 無：沒有聽牌標記，停輪照常</li>
+<li>manager：目前沒有場景在用，執行期無從驗證，只有型別檢查</li>
+<li>Tests：本輪略過 <code>tests/</code></li>
+</ul>
+
+<h2 id="remaining-risk">Remaining Risk</h2>
+
+<ul>
+<li>manager 在建構子監聽機台、目前沒有 <code>cleanup()</code> 可以移除監聽 —— Task 4 補（<code>init()</code>／<code>cleanup()</code>）</li>
+<li>遊戲端原本若直接掛 <code>BaseReel.onXxx</code> 等回呼，要改成監聽事件（範圍外的使用者只有 <code>tests/</code>，本輪不處理）</li>
+<li>瀏覽器是用 JS 手動推進驗證的，沒有看真實的 rAF 心跳；如果要看真實心跳，需要打開瀏覽器面板，或由你在瀏覽器確認</li>
+</ul>
+
+<h2 id="user-approval-required">User Approval Required</h2>
+
+<ul>
+<li>Required: true</li>
+<li>Blocking: true</li>
+<li>Reason: Every checkpoint requires explicit user approval before the workflow may continue.</li>
+</ul>
+
+<h2 id="approval-basis">Approval Basis</h2>
+
+<ul>
+<li>[x] Current workflow state is understood.</li>
+<li>[x] Current phase status is documented in this checkpoint or the relevant phase artifact.</li>
+<li>[x] Review status is documented or explicitly not required for this scope.</li>
+<li>[x] Verification evidence is documented or the remaining verification gap is listed.</li>
+<li>[x] Workspace reconciliation is acceptable or the drift is listed as a blocker.</li>
+<li>[x] No unresolved blocking issue remains, or the blocker is listed below.</li>
+<li>[x] Runtime state has been synced to <code>run-workflow/workflow-state.json</code>.</li>
+</ul>
+
+<h2 id="confirmation-checklist">Confirmation Checklist</h2>
+
+<ul>
+<li>[ ] The checkpoint summary is accurate.</li>
+<li>[ ] The listed completed tasks match the actual work.</li>
+<li>[ ] The verification evidence is acceptable.</li>
+<li>[ ] The remaining risks are acceptable or need revision.</li>
+<li>[ ] The proposed next operation is acceptable.</li>
+</ul>
+
+<h2 id="proposed-operation-steps">Proposed Operation Steps</h2>
+
+<ol>
+<li>Phase 2 標為 DONE</li>
+<li>寫 phase-3 handoff（plan Task 3：Icon 改用 <code>iconClass</code>／<code>iconSkinName</code> 建立；<code>BaseDropReel</code> 不再掛 <code>BaseMovement</code> 的回呼，每幀主動讀值）</li>
+<li>執行 Task 3，型別檢查、打包、瀏覽器（切換方向各轉一次；故意填錯 <code>iconClass</code> 確認 throw）後寫 phase-3 checkpoint，停下等同意</li>
+</ol>
+
+<h2 id="next-available-actions">Next Available Actions</h2>
+
+<ol>
+<li>同意，進 Phase 3</li>
+<li>先 commit 再進 Phase 3</li>
+<li>你先在瀏覽器用真實心跳確認一次</li>
+<li>修改本 checkpoint 或 Phase 3 做法／暫停／取消</li>
+</ol>
+
+<h2 id="recommended-next-step">Recommended Next Step</h2>
+
+<ul>
+<li>進 Phase 3</li>
+</ul>
+
+<h2 id="user-decision-needed">User Decision Needed</h2>
+
+<p>Please confirm one of:</p>
+
+<ol>
+<li>Approve and continue.</li>
+<li>Revise checkpoint, checklist, or proposed operation steps.</li>
+<li>Pause workflow.</li>
+<li>Cancel workflow.</li>
+</ol>
+    </main>
+  </div>
+</body>
+</html>

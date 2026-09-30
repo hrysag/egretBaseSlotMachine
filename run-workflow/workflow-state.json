@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "activeRound": "round-manager-followup",
+  "roundFolder": "run-workflow/round-manager-followup",
+  "feature": "改寫不吻合 Egret 規範的內容，依照 Egret 規範格式",
+  "workflowMode": "FAST",
+  "workflowState": "VERIFICATION",
+  "activePhase": "phase-6",
+  "isPaused": false,
+  "isCancelled": false,
+  "resumeAllowed": true,
+  "archived": false,
+  "archivePath": "",
+  "blockingIssue": "",
+  "nextRecommendedAction": "review 修正完成，等使用者決定：commit／進 phase-7（重寫斷言，先答測試檔匿名函式要不要改）",
+  "updatedAt": "2026-10-01T04:30:00+08:00"
+}

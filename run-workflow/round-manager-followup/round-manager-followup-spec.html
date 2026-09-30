@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Round Manager Followup Spec</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Round Manager Followup Spec</h1>
+    <p>Source: round-manager-followup-spec.md</p>
+    <p>Generated: 2026-10-01 02:19:58</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#spec核心程式改寫成符合-egret-規範">Spec：核心程式改寫成符合 Egret 規範</a></li>
+<li class="level-2"><a href="#1-目標">1. 目標</a></li>
+<li class="level-2"><a href="#2-範圍">2. 範圍</a></li>
+<li class="level-2"><a href="#3-規範對照與現況">3. 規範對照與現況</a></li>
+<li class="level-2"><a href="#4-模組寫法namespace">4. 模組寫法：namespace</a></li>
+<li class="level-2"><a href="#5-跨模組通知自訂事件">5. 跨模組通知：自訂事件</a></li>
+<li class="level-3"><a href="#51-寫法使用者指定">5.1 寫法（使用者指定）</a></li>
+<li class="level-3"><a href="#52-事件類別名稱皆暫定">5.2 事件類別（名稱皆暫定）</a></li>
+<li class="level-3"><a href="#53-保留的同模組回呼">5.3 保留的同模組回呼</a></li>
+<li class="level-2"><a href="#6-basedropreel-不再掛-basemovement-的回呼">6. `BaseDropReel` 不再掛 `BaseMovement` 的回呼</a></li>
+<li class="level-2"><a href="#7-iconiconclass-iconskinname-取代-iconfactory">7. Icon：`iconClass` + `iconSkinName` 取代 `iconFactory`</a></li>
+<li class="level-2"><a href="#8-manager">8. Manager</a></li>
+<li class="level-3"><a href="#81-介面注入">8.1 介面注入</a></li>
+<li class="level-3"><a href="#82-改寫內容">8.2 改寫內容</a></li>
+<li class="level-2"><a href="#9-其他照規範的修正">9. 其他照規範的修正</a></li>
+<li class="level-3"><a href="#91-匿名函式-有名字">9.1 匿名函式 → 有名字</a></li>
+<li class="level-3"><a href="#92-建構子-init">9.2 建構子 → `init()`</a></li>
+<li class="level-3"><a href="#93-unknown-any">9.3 `unknown` → `any`</a></li>
+<li class="level-2"><a href="#10-輕量骨架">10. 輕量骨架</a></li>
+<li class="level-3"><a href="#101-會新增的檔案路徑暫定">10.1 會新增的檔案（路徑暫定）</a></li>
+<li class="level-3"><a href="#102-會修改的檔案">10.2 會修改的檔案</a></li>
+<li class="level-3"><a href="#103-生命週期與清理責任">10.3 生命週期與清理責任</a></li>
+<li class="level-3"><a href="#104-分階段細節在-plan">10.4 分階段（細節在 plan）</a></li>
+<li class="level-2"><a href="#11-驗證">11. 驗證</a></li>
+<li class="level-2"><a href="#12-風險">12. 風險</a></li>
+<li class="level-2"><a href="#13-單軸事件調整2026-10-01-定案code-review-第-5-項延伸">13. 單軸事件調整（2026-10-01 定案，code review 第 5 項延伸）</a></li>
+<li class="level-3"><a href="#131-原則使用者定">13.1 原則（使用者定）</a></li>
+<li class="level-3"><a href="#132-單軸事件的處理">13.2 單軸事件的處理</a></li>
+<li class="level-3"><a href="#133-icon-新增兩個時間點">13.3 icon 新增兩個時間點</a></li>
+<li class="level-3"><a href="#134-狀態">13.4 狀態</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="spec核心程式改寫成符合-egret-規範">Spec：核心程式改寫成符合 Egret 規範</h1>
+
+<blockquote>日期：2026-09-30</blockquote>
+<blockquote>模式：FAST</blockquote>
+<blockquote>規範來源：<code>~/.claude/skills/game-implementation-boundary/engines/egret/</code>（<code>engine.md</code>、<code>boundary.md</code>、<code>typescript.md</code>、<code>project-rules.md</code>），<strong>全部照做，不以專案現況例外</strong></blockquote>
+<blockquote>引擎原始碼：<code>D:\engine\egret\egret-core-master\src</code></blockquote>
+<blockquote>本文以「類別.成員」指路，不寫行號。</blockquote>
+
+<p>---</p>
+
+<h2 id="1-目標">1. 目標</h2>
+
+<p>把核心程式中不符合 Egret 規範的地方，依 Egret 規範的格式改寫。行為（滾動、停輪、急停、聽牌、掉落、round 流程）不變。</p>
+
+<p>---</p>
+
+<h2 id="2-範圍">2. 範圍</h2>
+
+<div class="table-wrap"><table><thead><tr><th>處理</th><th>不處理</th></tr></thead><tbody><tr><td><code>src/SlotMachine/Core/**</code></td><td>Egret 範本自帶檔案：<code>AssetAdapter.ts</code>、<code>LoadingUI.ts</code>、<code>Platform.ts</code>、<code>ThemeAdapter.ts</code>、<code>EgretToolchainShim.d.ts</code></td></tr><tr><td><code>src/SlotMachine/Drop/**</code></td><td><code>Main.ts</code> 除了 <code>import</code> 那一行以外的內容</td></tr><tr><td><code>src/SlotMachine/Manager/**</code></td><td><code>tests/**</code>（<code>CoreGeometry.test.ts</code>、<code>EgretStub.ts</code>）</td></tr><tr><td><code>src/test/**</code>（<code>SlotMachineScene.ts</code>、<code>TestSlotMachine.ts</code>、<code>TestReelIcon.ts</code>、<code>TestSymbolTable.ts</code>）</td><td>物件池（空殼內表演物件的來源，另外談）</td></tr><tr><td><code>Main.ts</code> 的 <code>import { SlotMachineScene } …</code> 那一行</td><td>打包設定（<code>scripts/config*.ts</code>）</td></tr></tbody></table></div>
+
+<p><strong>已知後果</strong>：<code>tests/CoreGeometry.test.ts</code> 以 <code>import</code> 引用核心，改寫後無法編譯，本輪不執行那 357 項斷言。</p>
+
+<p>---</p>
+
+<h2 id="3-規範對照與現況">3. 規範對照與現況</h2>
+
+<div class="table-wrap"><table><thead><tr><th>規範</th><th>現況</th><th>處理</th></tr></thead><tbody><tr><td>只用 <code>namespace</code>，不寫 <code>import</code>／<code>export</code>；跨 namespace 寫完整名稱，不用別名</td><td>範圍內全部檔案都是 ES module</td><td>§4</td></tr><tr><td>TS 2.4.2 語法（無 <code>unknown</code>、<code>?.</code>、<code>??</code>、<code>field!:</code> 等）</td><td><code>unknown</code> 8 處（範圍內 7 處）</td><td>改 <code>any</code> 並在使用前檢查型別</td></tr><tr><td>依 <code>tsconfig.json</code> 偵測 Map／Set：<code>lib</code> 有 <code>es2015.collection</code>、無 <code>es2015.iterable</code>、無 <code>downlevelIteration</code></td><td>只用建構、<code>get</code>／<code>set</code>／<code>has</code>、<code>forEach</code></td><td>符合，維持；不得新增 <code>keys()</code>／<code>values()</code>／<code>entries()</code>／<code>Array.from</code>／<code>for...of</code> 走訪 Map／Set</td></tr><tr><td><code>strict: true</code>：參數標型別、<code>null</code> 寫進型別、<code>map.get()</code> 先判斷</td><td>—</td><td>改寫時照做</td></tr><tr><td>禁止匿名函式，指定給有名字的變數</td><td>陣列方法 callback、Promise executor、<code>.then</code>、緩動表、測試場景按鈕等</td><td>§9</td></tr><tr><td>建構子不做初始化；<code>init()</code> + <code>_inited</code>；外部可呼叫的 <code>cleanup()</code></td><td>7 個類別在建構子收參數或初始化</td><td>§9</td></tr><tr><td>禁止跨類別 callback 設計（使用者裁定：<strong>同模組可以，跨模組禁止</strong>；跨模組通知用自訂事件）</td><td>跨模組的回呼屬性與 <code>iconFactory</code></td><td>§5～§7</td></tr><tr><td>使用 DI 時須用介面注入</td><td>manager 直接收機台類別實例</td><td>§8</td></tr><tr><td>禁止原生計時器</td><td>範圍內只有註解提到 <code>setTimeout</code></td><td>無需處理</td></tr></tbody></table></div>
+
+<p>---</p>
+
+<h2 id="4-模組寫法namespace">4. 模組寫法：namespace</h2>
+
+<div class="table-wrap"><table><thead><tr><th>資料夾</th><th>namespace</th></tr></thead><tbody><tr><td><code>src/SlotMachine/Core/**</code></td><td><code>slot_core</code></td></tr><tr><td><code>src/SlotMachine/Drop/**</code></td><td><code>slot_drop</code></td></tr><tr><td><code>src/SlotMachine/Manager/**</code></td><td><code>slot_manager</code></td></tr><tr><td><code>src/test/**</code></td><td><code>slot_test</code></td></tr></tbody></table></div>
+
+<ul>
+<li><strong>名稱用單層、底線分隔（<code>slot_core</code>，不用 <code>slot.core</code>）</strong>（2026-09-30 phase-1 除錯後使用者定案）：打包工具 <code>@egret/egret-webpack-bundler</code> 的 <code>loaders/ts-loader/ts-transformer.js</code>（<code>legacy</code> 模式）把每個 namespace 換成三個節點（<code>var x = window[&#x27;x&#x27;];</code>、namespace、<code>window[&quot;x&quot;] = x;</code>），但帶點的 <code>namespace a.b { }</code> 外層的 body 只收一個節點 → <code>Debug Failure. False expression: Too many nodes written to output.</code>。實測：<code>namespace slot.core {}</code> 失敗；巢狀 <code>namespace slot { export namespace core {} }</code> 可以但會把 <code>core</code>、<code>drop</code>、<code>test</code> 等短名稱掛上 <code>window</code>；單層 <code>slot_core</code> 可以且只掛 <code>slot_core</code></li>
+<li>每個檔案以 <code>namespace slot_xxx { … }</code> 包住；原本 <code>export</code> 的宣告改成 namespace 內 <code>export</code>（namespace 成員匯出，不是 ES module 匯出）；原本檔案內私有的常數與函式保留為 namespace 內非匯出成員</li>
+<li>同一 namespace 內直接寫名稱；跨 namespace 一律完整名稱，例：<code>slot_drop</code> 內寫 <code>slot_core.BaseReel</code></li>
+<li>相依方向不變：<code>slot_manager</code> → <code>slot_core</code>、<code>slot_drop</code>；<code>slot_drop</code> → <code>slot_core</code>；<code>slot_core</code> 不得出現 <code>slot_drop.</code>、<code>slot_manager.</code></li>
+<li><code>BaseReel.ts</code> 開頭的轉匯出（<code>export { SymbolData, SymbolVisualSize } from …</code> 等 6 行）刪除：同一個 <code>slot_core</code> 內不需要轉匯出，原本經由 <code>BaseReel.ts</code> 取用這些名稱的地方直接寫 <code>slot_core.Xxx</code></li>
+<li>更正（2026-09-30 寫 plan 時）：前版寫「<code>TestSymbolTable.ts</code> 轉匯出 <code>SymbolData</code> 而重名」不正確 —— 盤點時 PowerShell 的分組不分大小寫，把 <code>TestSymbolTable.symbolData()</code>（函式）與 <code>SymbolData</code>（介面）算成同名。實際沒有重名</li>
+<li><code>Main.ts</code>：刪除 <code>import</code> 那一行，<code>new SlotMachineScene()</code> 改成 <code>new slot_test.SlotMachineScene()</code></li>
+<li><strong>打包設定不動</strong>：<code>scripts/config.ts</code> 使用 <code>WebpackBundlePlugin</code>（<code>typescript: { mode: &#x27;legacy&#x27; }</code>）。已讀 <code>@egret/egret-webpack-bundler</code> 原始碼確認：</li>
+<li><code>loaders/src-loader/index.js</code>：入口檔自動依相依順序 <code>require</code> 全部未模組化的檔案（<code>factory.sortUnmodules()</code>）</li>
+<li><code>loaders/ts-loader/ts-transformer.js</code>：<code>ModuleDeclaration</code>（namespace）前插入 <code>var x = window[&#x27;x&#x27;];</code>、後插入 <code>window[&quot;x&quot;] = x;</code>，跨檔同名 namespace 可合併</li>
+<li>EXML 目前沒有引用範圍內的類別；日後在 exml 使用時命名空間要寫成 <code>xmlns:ns=&quot;slot_core.*&quot;</code> 之類</li>
+</ul>
+
+<p>---</p>
+
+<h2 id="5-跨模組通知自訂事件">5. 跨模組通知：自訂事件</h2>
+
+<h3 id="51-寫法使用者指定">5.1 寫法（使用者指定）</h3>
+
+<pre><code>namespace slot_core {
+    export class SlotMachineEvent extends egret.Event {
+        public static readonly REEL_STOPPED: string = &quot;reelStopped&quot;;
+
+        public reelIndex: number = -1;
+        public reel: BaseReel | null = null;
+
+        public constructor(type: string, bubbles: boolean = false, cancelable: boolean = false) {
+            super(type, bubbles, cancelable);
+        }
+    }
+}</code></pre>
+
+<ul>
+<li>發送：<code>new XxxEvent(XxxEvent.TYPE)</code> → 填欄位 → <code>this.dispatchEvent(evt)</code></li>
+<li><strong>發送前先檢查 <code>this.hasEventListener(type)</code>，沒人聽就不 <code>new</code></strong>：避免每格、每幀的事件在沒人聽時也配置物件（規範「避免 gameplay loop 中頻繁 allocation」；引擎 <code>EventDispatcher.dispatchEventWith()</code> 也是這樣做）</li>
+<li>接收：有名字的方法；<code>init()</code> 內 <code>addEventListener(type, this.onXxxHandler, this)</code>，<code>cleanup()</code> 內以相同 <code>listener</code>、<code>thisObject</code>、<code>useCapture</code> <code>removeEventListener</code></li>
+<li>欄位一律給預設值（TS 2.4.2 不檢查欄位初始化）</li>
+<li>引擎事實（<code>src/egret/events/EventDispatcher.ts</code>）：<code>dispatchEvent</code> 同步逐一 <code>listener.call(thisObject, event)</code>，呼叫時機與原本回呼相同；同一組 <code>listener</code> + <code>thisObject</code> 不會重複註冊</li>
+</ul>
+
+<h3 id="52-事件類別名稱皆暫定">5.2 事件類別（名稱皆暫定）</h3>
+
+<blockquote><strong>2026-10-01 修改</strong>：單軸（<code>BaseReel</code>、<code>BaseDropReel</code>）不再對外發事件，<code>ReelEvent</code> 整個移除，見 §13。下表單軸兩列已不適用。</blockquote>
+
+<p>事件類別放在發送方所屬模組。</p>
+
+<div class="table-wrap"><table><thead><tr><th>namespace</th><th>發送方</th><th>事件類別</th><th>事件種類 → 取代的回呼屬性</th><th>欄位</th></tr></thead><tbody><tr><td><code>slot_core</code></td><td><code>BaseSlotMachine</code></td><td><code>SlotMachineEvent</code></td><td><code>REEL_STARTED</code> ← <code>onReelStarted</code>；<code>ALL_REELS_STARTED</code> ← <code>onAllReelsStarted</code>；<code>REEL_STOPPED</code> ← <code>onReelStopped</code>；<code>ALL_REELS_STOPPED</code> ← <code>onAllReelsStopped</code>；<code>LISTEN_START</code> ← <code>onListenStart</code>；<code>LISTEN_END</code> ← <code>onListenEnd</code></td><td><code>reelIndex</code>、<code>reel</code>、<code>stopMode</code></td></tr><tr><td><code>slot_core</code></td><td><code>BaseReel</code></td><td><code>ReelEvent</code></td><td><code>HALF_CELL_COMPLETE</code> ← <code>onHalfCellComplete</code>；<code>CELL_MOVEMENT_COMPLETE</code> ← <code>onCellMovementComplete</code>；<code>ROLL_STARTED</code> ← <code>onRollStarted</code>；<code>ROLL_STOPPED</code> ← <code>onRollStopped</code>；<code>STOP_EFFECT_STARTED</code> ← <code>onStopEffectStarted</code>；<code>STOP_EFFECT_COMPLETED</code> ← <code>onStopEffectCompleted</code>；<code>START_EFFECT_COMPLETED</code> ← <code>onStartEffectCompleted</code>；<code>REEL_DATA_CHANGED</code> ← <code>onReelDataChanged</code></td><td><code>completedHalf</code>、<code>stopMode</code>、<code>runtime</code>、<code>previousData</code></td></tr><tr><td><code>slot_drop</code></td><td><code>BaseDropSlotMachine</code></td><td><code>DropEvent</code></td><td><code>REEL_DROP_STARTED</code> ← <code>onReelDropStarted</code>；<code>REEL_DROP_COMPLETED</code> ← <code>onReelDropCompleted</code></td><td><code>reelIndex</code>、<code>reel</code></td></tr><tr><td><code>slot_drop</code></td><td><code>BaseDropReel</code></td><td><code>DropEvent</code></td><td><code>DROP_STARTED</code> ← <code>onDropStarted</code>；<code>DROP_COMPLETED</code> ← <code>onDropCompleted</code></td><td>—</td></tr><tr><td><code>slot_manager</code></td><td><code>BaseRoundManager</code></td><td><code>RoundEvent</code></td><td><code>STAGE_ENTER</code> ← <code>onStageEnter</code>；<code>GAME_END</code> ← <code>onGameEnd</code></td><td><code>stage</code>、<code>context</code></td></tr></tbody></table></div>
+
+<ul>
+<li>上表的回呼屬性全部移除；各類別 <code>cleanup()</code> 內原本清回呼屬性的那幾行跟著改掉</li>
+<li>發送順序、發送時機與原本回呼完全相同（例：<code>BaseDropReel</code> 到位事件仍在 resolve 掉落 Promise 之前；<code>GAME_END</code> 仍在 <code>startGame()</code> resolve 之前）</li>
+<li><code>BaseRoundManager</code> 改成繼承 <code>egret.EventDispatcher</code>（一般類別，非顯示物件）；機台與單軸本來就是 <code>eui.Component</code>，已具備 <code>dispatchEvent</code></li>
+</ul>
+
+<h3 id="53-保留的同模組回呼">5.3 保留的同模組回呼</h3>
+
+<div class="table-wrap"><table><thead><tr><th>回呼</th><th>使用者</th><th>原因</th></tr></thead><tbody><tr><td><code>BaseMovement.onValueChanged</code>、<code>onCommandComplete</code>、<code>onQueueComplete</code>、<code>addCallback()</code></td><td><code>BaseReel</code>、<code>ReelAxisEffect</code>（同 <code>slot_core</code>）</td><td>同模組</td></tr><tr><td><code>TestSlotMachine.onUpdate</code></td><td><code>SlotMachineScene</code>（同 <code>slot_test</code>）</td><td>同模組</td></tr><tr><td><code>ReelStopFlow</code> 建構參數中的 <code>ReelCellSpanResolver</code>、<code>ReelPerformanceDataProvider</code>、<code>ReelDataValidator</code></td><td><code>BaseReel</code>（同 <code>slot_core</code>）</td><td>同模組；改由 <code>init()</code> 傳入（§9）</td></tr></tbody></table></div>
+
+<p>保留的回呼仍須：以有名字的 handler 指派、<code>cleanup()</code> 內解除。</p>
+
+<p>---</p>
+
+<h2 id="6-basedropreel-不再掛-basemovement-的回呼">6. <code>BaseDropReel</code> 不再掛 <code>BaseMovement</code> 的回呼</h2>
+
+<ul>
+<li><code>BaseDropReel.createGroupDrop()</code> 不再設定 <code>movement.onValueChanged</code></li>
+<li><code>BaseDropReel.update()</code>：每組 <code>drop.movement.update(deltaTime)</code> 之後，直接把 <code>drop.movement.value</code> 寫進該組每一格的 <code>cellOffset</code>，全部組推完再 <code>syncAllIcons()</code>（順序不變）</li>
+<li>移除 <code>completeDrop()</code>、<code>cleanup()</code> 內解除 <code>onValueChanged</code> 的程式</li>
+<li>畫面結果不變：<code>syncAllIcons()</code> 讀到的是本幀最終值；<code>quickStop()</code> 本來就直接把 <code>cellOffset</code> 設到終點</li>
+</ul>
+
+<p>---</p>
+
+<h2 id="7-iconiconclass-iconskinname-取代-iconfactory">7. Icon：<code>iconClass</code> + <code>iconSkinName</code> 取代 <code>iconFactory</code></h2>
+
+<p>對應 Cocos 原版：<code>BaseReel</code> 的 <code>@property(Prefab) iconPrefab</code> 是一個欄位參照，<code>ReelIconManager.initializeIcons()</code> 以它 <code>instantiate</code> N 個並從根節點取 <code>BaseReelIcon</code>（可為子類別）。Egret 把「類別」與「外觀」分開，故開兩個欄位。</p>
+
+<div class="table-wrap"><table><thead><tr><th>欄位（<code>BaseReel</code>、<code>BaseDropReel</code>）</th><th>型別</th><th>對應 Cocos</th><th>沒填時</th></tr></thead><tbody><tr><td><code>iconClass</code></td><td><code>string</code>：空殼類別完整名稱，例 <code>&quot;slot_test.TestReelIcon&quot;</code></td><td>Prefab 根節點掛的元件</td><td>用 <code>slot_core.BaseReelIcon</code></td></tr><tr><td><code>iconSkinName</code></td><td><code>string</code>：空殼外觀 skin，例 <code>&quot;skins.ReelIconSkin&quot;</code></td><td>Prefab 的外觀</td><td>不設定 skin</td></tr></tbody></table></div>
+
+<ul>
+<li>兩個欄位都是字串，可在 UI Editor 填（exml 屬性）</li>
+<li>程式設定入口：<code>configureIconDisplay({ iconClass, iconSkinName })</code>（<code>ReelIconDisplayConfig</code> 的 <code>iconFactory</code> 換成這兩個選填欄位）</li>
+<li>建立：<code>ReelIconManager.initializeIcons()</code> 以 <code>egret.getDefinitionByName(iconClass)</code> 取得類別（引擎 <code>src/egret/utils/getDefinitionByName.ts</code>，支援帶點的 namespace 名稱；<code>eui.Component</code> 解析 <code>skinName</code> 也用它）</li>
+<li>找不到類別、或不是 <code>BaseReelIcon</code> 本身或子類別 → throw</li>
+<li><code>new</code> 出 N 個，有 <code>iconSkinName</code> 就設 <code>skinName</code>，其餘流程（<code>setupCell()</code>、<code>addChild</code>、<code>syncAllIcons()</code>）不變</li>
+<li>移除 <code>ReelIconFactory</code> 型別</li>
+<li><code>TestReelIcon</code>：建構子不再收參數。原本建構子收的方向資訊（退場是否在正向、是否垂直）改由框架在 <code>BaseReelIcon.setupCell()</code> 一併傳入並記在空殼上，<code>onCellSetup()</code> 內可讀（<code>setupCell()</code> 與 <code>onCellSetup()</code> 的參數隨之增加；方向由框架給，不在遊戲層自行推導）</li>
+<li><code>TestSlotMachine.applyInitialLayout()</code>：改傳 <code>{ iconClass: &quot;slot_test.TestReelIcon&quot; }</code>，移除 <code>createIcon()</code></li>
+<li>空殼內的表演物件（物件池）不在本輪</li>
+</ul>
+
+<p>---</p>
+
+<h2 id="8-manager">8. Manager</h2>
+
+<h3 id="81-介面注入">8.1 介面注入</h3>
+
+<div class="table-wrap"><table><thead><tr><th>介面（名稱暫定）</th><th>所屬</th><th>內容</th><th>實作者</th></tr></thead><tbody><tr><td><code>slot_core.ISlotMachine</code></td><td><code>slot_core</code></td><td>繼承 <code>egret.IEventDispatcher</code>；<code>startSpin</code>、<code>stopSpin</code>、<code>quickStop</code>、<code>waitForSettledAsync</code>、<code>isSpinning</code>（manager 實際用到的）</td><td><code>BaseSlotMachine</code></td></tr><tr><td><code>slot_drop.IDropSlotMachine</code></td><td><code>slot_drop</code></td><td>繼承 <code>egret.IEventDispatcher</code>；<code>dropOut</code>、<code>dropIn</code>、<code>dropRefill</code>、<code>quickStop</code>，以及 manager 判斷「盤面還在」所需的查詢</td><td><code>BaseDropSlotMachine</code></td></tr></tbody></table></div>
+
+<ul>
+<li>實際清單以 manager 現有呼叫為準，實作時逐一對照，不多開</li>
+<li>manager 以 <code>init()</code> 收兩個介面（各自可不給），不在建構子收</li>
+</ul>
+
+<h3 id="82-改寫內容">8.2 改寫內容</h3>
+
+<ul>
+<li>去掉 <code>abstract</code>（<code>BaseRoundManager</code>、<code>RollRoundManager</code>、<code>DropRoundManager</code> 及其方法）</li>
+<li>去掉泛型 <code>&lt;TState&gt;</code>；<code>RoundData.state</code> 等改成 <code>any</code></li>
+<li>去掉 <code>unknown</code></li>
+<li>去掉 <code>runStage(…, this.onRoundStart)</code> 與 <code>hook.call(this, context)</code>：每個環節直接依序呼叫對應方法</li>
+<li>要遊戲實作的方法給預設實作並註明「留給繼承類別」：</li>
+<li><code>nextRound()</code> 預設回傳 <code>null</code>（= 整局結束）</li>
+<li><code>RollRoundManager.getSpinMode()</code> 預設實作 throw（框架不知道遊戲註冊了哪些模式，沒有合理的預設值）</li>
+<li><code>presentBoard()</code> 由 <code>RollRoundManager</code>、<code>DropRoundManager</code> 各自實作；<code>BaseRoundManager</code> 的預設實作 throw（基底不知道怎麼出盤面）</li>
+<li>生命週期：<code>init(roll, drop)</code> + <code>_inited</code> + <code>assertInitialized()</code> + <code>cleanup()</code></li>
+<li><code>cleanup()</code>：移除對機台的全部事件監聽、清除收集中的逐軸 Promise（不再等它們）、清掉機台參照、<code>_inited = false</code></li>
+<li>監聽機台：<code>init()</code> 內對 <code>ISlotMachine</code> 加 <code>SlotMachineEvent.REEL_STARTED</code>／<code>REEL_STOPPED</code>／<code>LISTEN_START</code>／<code>LISTEN_END</code>，對 <code>IDropSlotMachine</code> 加 <code>DropEvent.REEL_DROP_STARTED</code>／<code>REEL_DROP_COMPLETED</code>；handler 為有名字的方法，內部照舊轉給可覆寫的同名方法並收集回傳的 Promise</li>
+<li>上次逐行清單中的其他項目一併處理：</li>
+<li>getter <code>reelEventContext</code> 每次臨時組物件 → 改成欄位或一般方法</li>
+<li><code>(context.round.cascades as RoundCascade[])</code> 強制轉型 → 改成先判斷</li>
+<li><code>throw new Error(&quot;…&quot;)</code> 寫在同一行 → 換行寫訊息（照 Core）</li>
+<li>預設實作不寫 <code>return Promise.resolve();</code>，寫成 <code>async</code> 方法，內容只放註解</li>
+<li>一個參數一行</li>
+<li><code>ROUND_DATA_PENDING</code> 模組層常數 → 類別上的 <code>static readonly</code></li>
+<li><code>RollRoundManager</code> 內 <code>void this.requireRollMachine().startSpin(…)</code> 丟掉 Promise → 收下並在適當處等待／處理錯誤，不吞錯</li>
+<li><code>_ignoreRejectionHandler</code> 等為壓警告的寫法 → 以有名字的方法處理，必要性照舊（先掛 catch 避免 Uncaught）</li>
+</ul>
+
+<p>---</p>
+
+<h2 id="9-其他照規範的修正">9. 其他照規範的修正</h2>
+
+<h3 id="91-匿名函式-有名字">9.1 匿名函式 → 有名字</h3>
+
+<p>範圍內所有直接寫在呼叫處的匿名函式改成有名字的方法或具名欄位，包括：</p>
+
+<ul>
+<li>陣列方法 callback（<code>map</code>、<code>filter</code>、<code>every</code>、<code>some</code>、<code>sort</code>、<code>forEach</code>）</li>
+<li><code>new Promise((resolve) =&gt; …)</code> 的 executor、<code>.then(() =&gt; …)</code>、<code>.catch((error) =&gt; …)</code></li>
+<li><code>ReelAxisEffect</code> 的緩動表（每個緩動改成具名函式）</li>
+<li><code>BaseDropSlotMachine</code> 批次中的 <code>start: () =&gt; reel.startDropXxx()</code></li>
+<li><code>SlotMachineScene</code> 的按鈕 handler、機台回呼、<code>addButton()</code> 收的 <code>handler</code></li>
+</ul>
+
+<p>已是具名欄位的箭頭函式（例：<code>BaseSlotMachine._tickHandler</code>、<code>BaseReel._firstHalfCompleteHandler</code>）不動。型別宣告中的 <code>=&gt;</code> 不是函式，不動。</p>
+
+<h3 id="92-建構子-init">9.2 建構子 → <code>init()</code></h3>
+
+<div class="table-wrap"><table><thead><tr><th>類別</th><th>現況</th><th>改成</th></tr></thead><tbody><tr><td><code>BaseMovement</code></td><td>建構子收 <code>initialValue</code> 並檢查</td><td><code>init(initialValue)</code> + <code>_inited</code>；呼叫端（<code>BaseReel</code>、<code>ReelAxisEffect</code>、<code>BaseDropReel</code>）隨之改</td></tr><tr><td><code>ReelStopFlow</code></td><td>建構子收 4 個相依</td><td><code>init(…)</code> + <code>_inited</code>；<code>BaseReel</code> 隨之改</td></tr><tr><td><code>BaseRoundManager</code>、<code>RollRoundManager</code>、<code>DropRoundManager</code></td><td>建構子收機台並 throw</td><td>§8</td></tr><tr><td><code>TestSlotMachine</code></td><td>建構子收參數</td><td><code>init(…)</code>，由 <code>SlotMachineScene</code> 呼叫</td></tr><tr><td><code>TestReelIcon</code></td><td>建構子收方向</td><td>§7</td></tr><tr><td><code>SlotMachineScene</code></td><td>建構子內初始化</td><td>非 eui 物件：第一次 <code>ADDED_TO_STAGE</code> 時呼叫 <code>init()</code>；另提供 <code>cleanup()</code></td></tr></tbody></table></div>
+
+<ul>
+<li>已有 <code>init()</code>／<code>cleanup()</code> 的類別照舊，只檢查 <code>cleanup()</code> 是否漏清新增的監聽與 Promise</li>
+<li>新增 Promise 必須同時有取消路徑並在 <code>cleanup()</code> 處理（規範「禁止 unresolved promise」）</li>
+</ul>
+
+<h3 id="93-unknown-any">9.3 <code>unknown</code> → <code>any</code></h3>
+
+<p><code>BaseDropSlotMachine.assertOnePerReel(values: unknown[], …)</code> 與 <code>Manager/</code> 各處改 <code>any</code>，使用前做型別檢查。</p>
+
+<p>---</p>
+
+<h2 id="10-輕量骨架">10. 輕量骨架</h2>
+
+<h3 id="101-會新增的檔案路徑暫定">10.1 會新增的檔案（路徑暫定）</h3>
+
+<div class="table-wrap"><table><thead><tr><th>檔案</th><th>內容</th></tr></thead><tbody><tr><td><code>src/SlotMachine/Core/Event/SlotMachineEvent.ts</code></td><td><code>slot_core.SlotMachineEvent</code></td></tr><tr><td><code>src/SlotMachine/Core/Event/ReelEvent.ts</code></td><td><code>slot_core.ReelEvent</code></td></tr><tr><td><code>src/SlotMachine/Core/ISlotMachine.ts</code></td><td><code>slot_core.ISlotMachine</code></td></tr><tr><td><code>src/SlotMachine/Drop/Event/DropEvent.ts</code></td><td><code>slot_drop.DropEvent</code></td></tr><tr><td><code>src/SlotMachine/Drop/IDropSlotMachine.ts</code></td><td><code>slot_drop.IDropSlotMachine</code></td></tr><tr><td><code>src/SlotMachine/Manager/Event/RoundEvent.ts</code></td><td><code>slot_manager.RoundEvent</code></td></tr></tbody></table></div>
+
+<h3 id="102-會修改的檔案">10.2 會修改的檔案</h3>
+
+<p>範圍內全部 <code>.ts</code>（<code>src/SlotMachine/<strong></code> 29 個、<code>src/test/</strong></code> 4 個），以及 <code>Main.ts</code> 的一行。</p>
+
+<h3 id="103-生命週期與清理責任">10.3 生命週期與清理責任</h3>
+
+<div class="table-wrap"><table><thead><tr><th>誰</th><th>init 做什麼</th><th>cleanup 做什麼</th></tr></thead><tbody><tr><td><code>BaseRoundManager</code></td><td>收機台介面、加機台事件監聽</td><td>移除監聽、放掉逐軸 Promise、清參照</td></tr><tr><td><code>SlotMachineScene</code></td><td>建機台、加機台／單軸事件監聽、建按鈕並加 <code>TOUCH_TAP</code> 監聽</td><td>移除全部監聽、<code>machine.cleanup()</code></td></tr><tr><td><code>BaseReel</code></td><td>建 <code>BaseMovement</code>、<code>ReelStopFlow</code> 並 <code>init()</code></td><td>照舊；確認同模組回呼解除</td></tr><tr><td><code>BaseDropReel</code></td><td>照舊</td><td>照舊，移除 <code>onValueChanged</code> 相關</td></tr></tbody></table></div>
+
+<h3 id="104-分階段細節在-plan">10.4 分階段（細節在 plan）</h3>
+
+<ol>
+<li>namespace 化（全部範圍檔案 + <code>Main.ts</code> 一行），編譯通過</li>
+<li>自訂事件與介面（§5、§8.1），移除跨模組回呼屬性</li>
+<li>Icon（§7）與 <code>BaseDropReel</code>（§6）</li>
+<li>Manager 改寫（§8.2）</li>
+<li>其他規範修正（§9）</li>
+<li>測試場景接上新介面、瀏覽器確認</li>
+</ol>
+
+<p>---</p>
+
+<h2 id="11-驗證">11. 驗證</h2>
+
+<div class="table-wrap"><table><thead><tr><th>項目</th><th>方法</th><th>通過條件</th></tr></thead><tbody><tr><td>TS 2.4.2 編譯</td><td><code>node D:\engine\egret\egret-core-master\tools\lib\typescript-plus\bin\tsc --noEmit -p tsconfig.json</code>（引擎內建 2.4.2，照專案 tsconfig）</td><td>0 錯誤</td></tr></tbody></table></div>
+<p>| 無 <code>import</code>／<code>export</code> | 範圍內搜尋 <code>^\s*(import|export)\s</code> | 0 筆（<code>Main.ts</code> 亦無） |</p>
+<p>| Map／Set 用法在 lib 範圍內 | 搜尋 <code>keys()</code>／<code>values()</code>／<code>entries()</code>／<code>Array.from</code>／<code>for...of</code> 走訪 Map／Set | 0 筆 |</p>
+<p>| 無匿名函式 | 逐檔檢查呼叫處的 <code>=&gt;</code> 與 <code>function(</code> | 只剩具名欄位與型別宣告 |</p>
+<p>| 跨模組不用回呼 | <code>slot_drop</code>、<code>slot_manager</code>、<code>slot_test</code> 內搜尋對其他模組物件指派 <code>.onXxx =</code> | 0 筆 |</p>
+<p>| 監聽成對 | 每個 <code>addEventListener</code> 在對應 <code>cleanup()</code> 有相同參數的 <code>removeEventListener</code> | 全部成對 |</p>
+<p>| 瀏覽器 | 預覽測試場景：開轉（一般／Turbo／L2）、急停、切換盤面／方向／軸數／停輪時間／聽牌 | 行為與改寫前相同，console 無錯誤 |</p>
+
+<p><code>tests/</code> 不在驗證範圍（已知無法編譯）。</p>
+
+<p>---</p>
+
+<h2 id="12-風險">12. 風險</h2>
+
+<div class="table-wrap"><table><thead><tr><th>風險</th><th>處理</th></tr></thead><tbody><tr><td>改動面大（約 33 個檔），行為回歸</td><td>分階段，每階段編譯通過才進下一階段；最後瀏覽器確認</td></tr><tr><td>斷言無法執行，少了自動化回歸保護</td><td>使用者已決定本輪略過 <code>tests/</code>；靠編譯與瀏覽器確認，並在 checkpoint 記錄</td></tr><tr><td>webpack <code>legacy</code> 模式下 namespace 載入順序</td><td>已讀 bundler 原始碼確認會排序；第 1 階段結束即在瀏覽器確認能跑</td></tr><tr><td>事件每格／每幀配置物件</td><td>發送前檢查 <code>hasEventListener</code></td></tr><tr><td>對外 API 改變（回呼屬性 → 事件、建構子 → <code>init()</code>、<code>iconFactory</code> → <code>iconClass</code>）</td><td>規範要求的改寫，使用者已同意；範圍內呼叫端全部同步改</td></tr></tbody></table></div>
+
+<p>---</p>
+
+<h2 id="13-單軸事件調整2026-10-01-定案code-review-第-5-項延伸">13. 單軸事件調整（2026-10-01 定案，code review 第 5 項延伸）</h2>
+
+<h3 id="131-原則使用者定">13.1 原則（使用者定）</h3>
+
+<ul>
+<li><strong>單軸發的東西只給自己的軸用</strong>；跨系統取用資訊一律透過機台／manager</li>
+<li>軸內部的通知用<strong>回呼</strong>（比事件快）；同模組回呼本來就允許（§3）</li>
+</ul>
+
+<p>起因：review 指出單軸每格發的事件每次新建事件物件。追下去發現 <code>ReelEvent</code> 是公開事件，目前唯一在聽的是機台系統外的測試場景（<code>CELL_MOVEMENT_COMPLETE</code>），跳過了機台；其餘 9 種沒有人聽。機台自己要知道單軸狀態，用的是單軸的 Promise（<code>waitForStoppedAsync()</code>、<code>waitForSettledAsync()</code>、掉落 <code>startDropXxx()</code> 的回傳值），不用這些事件。</p>
+
+<h3 id="132-單軸事件的處理">13.2 單軸事件的處理</h3>
+
+<div class="table-wrap"><table><thead><tr><th>單軸事件</th><th>處理</th><th>理由</th></tr></thead><tbody><tr><td><code>ROLL_STARTED</code>、<code>ROLL_STOPPED</code></td><td>移除</td><td>外部用機台的 <code>REEL_STARTED</code>、<code>REEL_STOPPED</code></td></tr><tr><td><code>HALF_CELL_COMPLETE</code>、<code>CELL_MOVEMENT_COMPLETE</code></td><td>移除</td><td>滾動機制內部的節拍，機台、manager、遊戲都用不到</td></tr><tr><td><code>REEL_DATA_CHANGED</code></td><td>移除</td><td>icon 換資料時本來就會收到 <code>onDataChanged()</code>（組成改變另有 <code>onCellChanged()</code>）</td></tr><tr><td><code>START_EFFECT_COMPLETED</code>、<code>STOP_EFFECT_STARTED</code>、<code>STOP_EFFECT_COMPLETED</code></td><td>留在 <code>BaseReel</code>，改回呼</td><td>原本在軸收發的留在軸</td></tr><tr><td>掉落單軸 <code>DROP_STARTED</code>、<code>DROP_COMPLETED</code></td><td>留在 <code>BaseDropReel</code>，改回呼</td><td>同上</td></tr></tbody></table></div>
+
+<ul>
+<li><code>ReelEvent</code> 類別移除；<code>DropEvent</code> 只剩掉落機台發的 <code>REEL_DROP_STARTED</code>、<code>REEL_DROP_COMPLETED</code></li>
+<li>保留的回呼：以有名字的 handler 指派、<code>cleanup()</code> 內解除（§5.3 同規則）；只給同模組使用</li>
+<li>測試場景不再監聽單軸；狀態文字改用場景本來就有的每幀心跳（<code>TestSlotMachine.onUpdate</code>）刷新</li>
+<li>單軸因此不再對外發任何事件，review 第 5 項（每格新建事件物件）隨之消失</li>
+</ul>
+
+<h3 id="133-icon-新增兩個時間點">13.3 icon 新增兩個時間點</h3>
+
+<p><code>BaseReelIcon</code> 開兩個可覆寫的方法（預設不做事，留給繼承類別），由單軸在對應時間點直接呼叫（單軸持有自己的 icon，同模組往下呼叫，與現有 <code>onDataChanged()</code> 同一種寫法）。名稱暫定。</p>
+
+<div class="table-wrap"><table><thead><tr><th>方法</th><th>呼叫時機</th><th>用途（使用者舉例）</th></tr></thead><tbody><tr><td><code>onFullyEntered()</code></td><td>這張牌<strong>完整進入</strong>可視區時</td><td>特殊 symbol 整個進入盤面時啟動效果</td></tr><tr><td><code>onReachedFinalPosition()</code></td><td>停輪、<strong>對齊結果</strong>那一刻，<strong>回彈開始之前</strong></td><td>把模糊圖換成結果圖</td></tr></tbody></table></div>
+
+<p>呼叫點細節（依用途推得，實作時照此做）：</p>
+
+<ul>
+<li><code>onFullyEntered()</code></li>
+<li>大圖的 head 在進場側，一組牌最後進來的是 head；「完整進入」= head 走進可視區第一格的那個格子邊界（框架本來就在格子邊界交接，時間點明確）</li>
+<li>呼叫 head（負責畫整張圖的那個 icon）；每經過一次呼叫一次，表演牌也會呼叫，是不是特殊牌由 icon 看自己的資料決定</li>
+<li>一開始就擺在盤面上的牌不算進入；比可視區還長的牌不會完整進入</li>
+<li><code>onReachedFinalPosition()</code></li>
+<li>在 <code>BaseReel.completeStop()</code>、停止效果開始<strong>之前</strong>呼叫，回彈時看到的已是結果圖</li>
+<li>呼叫 strip 上<strong>每一個</strong> icon（含進場／退場緩衝區）：回彈會往外衝一段距離，緩衝區的牌可能露出來</li>
+<li>結果對齊與即停（<code>Immediate</code>）都呼叫，帶停止方式參數，由 icon 自己判斷</li>
+<li>掉落不需要（掉落的牌沒有模糊圖的問題）</li>
+</ul>
+
+<h3 id="134-狀態">13.4 狀態</h3>
+
+<ul>
+<li>已寫入本文；<strong>尚未實作</strong>，等使用者指示</li>
+</ul>
+    </main>
+  </div>
+</body>
+</html>

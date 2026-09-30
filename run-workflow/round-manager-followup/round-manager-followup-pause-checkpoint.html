@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Round Manager Followup Pause Checkpoint</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #666b72;
+      --line: #d7d9de;
+      --accent: #0f766e;
+      --code-bg: #f0f2f4;
+      --table-stripe: #f8fafb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181a1b;
+        --panel: #202326;
+        --text: #eceff1;
+        --muted: #a3aab2;
+        --line: #3b4148;
+        --accent: #5eead4;
+        --code-bg: #141719;
+        --table-stripe: #1b1f23;
+      }
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px 28px;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    header p {
+      margin: 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      gap: 24px;
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+    }
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    nav li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    nav li.level-2 { padding-left: 10px; }
+    nav li.level-3, nav li.level-4, nav li.level-5, nav li.level-6 { padding-left: 20px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    main {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      min-width: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+      margin-bottom: 0.55em;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    h1:first-child, h2:first-child { margin-top: 0; }
+    code {
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-family: Consolas, "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      padding: 14px;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid var(--accent);
+      margin-left: 0;
+      padding: 8px 14px;
+      color: var(--muted);
+      background: var(--code-bg);
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 520px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--code-bg);
+      font-weight: 600;
+      text-align: left;
+    }
+    tbody tr:nth-child(even) {
+      background: var(--table-stripe);
+    }
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      nav {
+        position: static;
+        max-height: none;
+      }
+      main {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Round Manager Followup Pause Checkpoint</h1>
+    <p>Source: D:\Egret_test\newSlotMachineBase\run-workflow\round-manager-followup\round-manager-followup-pause-checkpoint.md</p>
+    <p>Generated: 2026-09-30 01:20:20</p>
+  </header>
+  <div class="layout">
+    <nav>
+      <h2>Sections</h2>
+      <ul>
+        <li class="level-1"><a href="#workflow-checkpoint暫停腦爆階段">Workflow Checkpoint：暫停（腦爆階段）</a></li>
+<li class="level-2"><a href="#current-workflow">Current Workflow</a></li>
+<li class="level-2"><a href="#artifacts">Artifacts</a></li>
+<li class="level-2"><a href="#pause-cancel">Pause / Cancel</a></li>
+<li class="level-2"><a href="#workspace">Workspace</a></li>
+<li class="level-2"><a href="#completed-tasks">Completed Tasks</a></li>
+<li class="level-2"><a href="#review-status">Review Status</a></li>
+<li class="level-2"><a href="#verification-evidence">Verification Evidence</a></li>
+<li class="level-2"><a href="#remaining-risk">Remaining Risk</a></li>
+<li class="level-2"><a href="#user-approval-required">User Approval Required</a></li>
+<li class="level-2"><a href="#approval-basis">Approval Basis</a></li>
+<li class="level-2"><a href="#confirmation-checklist">Confirmation Checklist</a></li>
+<li class="level-2"><a href="#proposed-operation-steps">Proposed Operation Steps</a></li>
+<li class="level-2"><a href="#next-available-actions">Next Available Actions</a></li>
+<li class="level-2"><a href="#recommended-next-step">Recommended Next Step</a></li>
+<li class="level-2"><a href="#user-decision-needed">User Decision Needed</a></li>
+      </ul>
+    </nav>
+    <main>
+      <h1 id="workflow-checkpoint暫停腦爆階段">Workflow Checkpoint：暫停（腦爆階段）</h1>
+
+<h2 id="current-workflow">Current Workflow</h2>
+
+<ul>
+<li>Mode：FAST</li>
+<li>State：BRAINSTORMING（已暫停）</li>
+<li>Round topic：round-manager-followup</li>
+<li>Round folder：<code>run-workflow/round-manager-followup/</code></li>
+<li>Runtime state：<code>run-workflow/workflow-state.json</code></li>
+<li>Active phase：（無，尚未進入任何階段）</li>
+<li>Archived：false</li>
+<li>Archive path：（無）</li>
+<li>Recovery source：runtime-state</li>
+</ul>
+
+<h2 id="artifacts">Artifacts</h2>
+
+<ul>
+<li>Spec：尚未產生</li>
+<li>Plan：尚未產生</li>
+<li>Last checkpoint：本檔</li>
+<li>Last review：無</li>
+<li>Last verification：無</li>
+<li>Last reconciliation：無</li>
+</ul>
+
+<h2 id="pause-cancel">Pause / Cancel</h2>
+
+<ul>
+<li>isPaused：true</li>
+<li>isCancelled：false</li>
+<li>resumeAllowed：true</li>
+</ul>
+
+<h2 id="workspace">Workspace</h2>
+
+<ul>
+<li>Workspace reconciliation：未做（尚未動程式）</li>
+<li>工作區現況（開 workflow 前就有、未 commit）：<code>doc/GameViewManager-Reference-Study.md</code>、<code>src/SlotMachine/Manager/BaseRoundManager.ts</code>、<code>src/SlotMachine/Manager/Data/RoundData.ts</code>、<code>tests/CoreGeometry.test.ts</code> 已修改；<code>doc/SESSION-2026-09-28-RoundManager.md</code> 與兩個 session 匯出 zip 未追蹤</li>
+<li>Blocking issue：無</li>
+</ul>
+
+<h2 id="completed-tasks">Completed Tasks</h2>
+
+<ul>
+<li>讀入交接文件：<code>doc/SESSION-2026-09-28-RoundManager.md</code>、<code>doc/GameViewManager-Reference-Study.md</code>、<code>doc/SESSION-2026-09-27-Rolling-Fixes.md</code></li>
+<li>從 <code>doc/session-exports/2026-09-29-session-d17079ee.zip</code> 讀回上次對話末尾的「<code>Manager/</code> 四個檔逐行違規清單」（程式確認仍未修改：<code>abstract</code>、泛型 <code>&lt;TState&gt;</code>、<code>hook.call</code>、建構子收機台）</li>
+<li>建立 FAST workflow 狀態與本輪資料夾</li>
+<li>判斷引擎：專案根目錄有 <code>egretProperties.json</code>（5.4.1），沒有 <code>assets/</code>、<code>settings/</code>、<code>package.json</code> → <strong>Egret</strong>；已讀 <code>game-implementation-boundary/engines/egret/</code> 四份規則</li>
+<li>與 Egret 預設不同、照專案的地方：用 <code>import</code>／<code>export</code>（不是 namespace）；<code>tsconfig.json</code> 開 <code>strict</code>、lib 多 <code>es2015.core</code>、<code>es2015.collection</code>；語法仍照 TS 2.4.2</li>
+</ul>
+
+<h2 id="review-status">Review Status</h2>
+
+<ul>
+<li>不適用（尚未產生 spec／程式）</li>
+</ul>
+
+<h2 id="verification-evidence">Verification Evidence</h2>
+
+<ul>
+<li>TypeScript compile：未跑（沒動程式）</li>
+<li>Tests：未跑（沒動程式）</li>
+<li>Manual runtime checks：無</li>
+<li>Lifecycle / async / cleanup checks：無</li>
+</ul>
+
+<h2 id="remaining-risk">Remaining Risk</h2>
+
+<ul>
+<li>待使用者確認「使用 Egret 規則」是否正確</li>
+<li>本輪範圍未定（只修寫法／修寫法＋測試場景／只接測試場景）</li>
+</ul>
+
+<h2 id="user-approval-required">User Approval Required</h2>
+
+<ul>
+<li>Required: true</li>
+<li>Blocking: true</li>
+<li>Reason: 使用者要求暫停；恢復前需明確同意。</li>
+</ul>
+
+<h2 id="approval-basis">Approval Basis</h2>
+
+<ul>
+<li>[x] Current workflow state is understood.</li>
+<li>[x] Current phase status is documented in this checkpoint or the relevant phase artifact.</li>
+<li>[x] Review status is documented or explicitly not required for this scope.</li>
+<li>[x] Verification evidence is documented or the remaining verification gap is listed.</li>
+<li>[x] Workspace reconciliation is acceptable or the drift is listed as a blocker.</li>
+<li>[x] No unresolved blocking issue remains, or the blocker is listed below.</li>
+<li>[x] Runtime state has been synced to <code>run-workflow/workflow-state.json</code>.</li>
+</ul>
+
+<h2 id="confirmation-checklist">Confirmation Checklist</h2>
+
+<ul>
+<li>[ ] The checkpoint summary is accurate.</li>
+<li>[ ] The listed completed tasks match the actual work.</li>
+<li>[ ] The verification evidence is acceptable.</li>
+<li>[ ] The remaining risks are acceptable or need revision.</li>
+<li>[ ] The proposed next operation is acceptable.</li>
+</ul>
+
+<h2 id="proposed-operation-steps">Proposed Operation Steps</h2>
+
+<ol>
+<li>恢復後，先確認引擎規則使用 Egret</li>
+<li>討論本輪範圍</li>
+<li>範圍定案後繼續腦爆 → 寫 spec</li>
+</ol>
+
+<h2 id="next-available-actions">Next Available Actions</h2>
+
+<ol>
+<li>恢復 workflow</li>
+<li>修改本 checkpoint</li>
+<li>取消 workflow</li>
+</ol>
+
+<h2 id="recommended-next-step">Recommended Next Step</h2>
+
+<ul>
+<li>恢復時從「確認引擎規則使用 Egret」接起</li>
+</ul>
+
+<h2 id="user-decision-needed">User Decision Needed</h2>
+
+<p>Please confirm one of:</p>
+
+<ol>
+<li>Approve and continue.</li>
+<li>Revise checkpoint, checklist, or proposed operation steps.</li>
+<li>Pause workflow.</li>
+<li>Cancel workflow.</li>
+</ol>
+    </main>
+  </div>
+</body>
+</html>

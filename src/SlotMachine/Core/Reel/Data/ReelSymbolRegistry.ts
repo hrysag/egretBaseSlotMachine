@@ -1,107 +1,113 @@
-/** 一種 Symbol 固定占用的 Cell 數量。 */
-export interface ReelSymbolCellDefinition {
-    readonly symbolId: number;
-    readonly cellSpan: number;
+namespace slot_core {
+    /** 一種 Symbol 固定占用的 Cell 數量。 */
+    export interface ReelSymbolCellDefinition {
+        readonly symbolId: number;
+        readonly cellSpan: number;
+
+        /**
+         * 同一 Reel Container 內的顯示排序權重。
+         *
+         * 數字越大越晚繪製；未設定時使用 0。
+         * 此值不是 Cocos Node.layer，也不是絕對 siblingIndex。
+         */
+        readonly displayPriority?: number;
+    }
 
     /**
-     * 同一 Reel Container 內的顯示排序權重。
+     * 保存 Symbol ID 與占用 Cell 數量的關係。
      *
-     * 數字越大越晚繪製；未設定時使用 0。
-     * 此值不是 Cocos Node.layer，也不是絕對 siblingIndex。
+     * SymbolData 只描述「這次要顯示哪張牌」；尺寸規則統一由此處管理，
+     * 避免同一 Symbol ID 在不同資料中帶入互相矛盾的 cellSpan。
      */
-    readonly displayPriority?: number;
-}
+    export class ReelSymbolRegistry {
+        private readonly _cellSpans = new Map<number, number>();
+        private readonly _displayPriorities = new Map<number, number>();
 
-/**
- * 保存 Symbol ID 與占用 Cell 數量的關係。
- *
- * SymbolData 只描述「這次要顯示哪張牌」；尺寸規則統一由此處管理，
- * 避免同一 Symbol ID 在不同資料中帶入互相矛盾的 cellSpan。
- */
-export class ReelSymbolRegistry {
-    private readonly _cellSpans = new Map<number, number>();
-    private readonly _displayPriorities = new Map<number, number>();
+        /** `getMaxCellSpan()` 走訪時累積的最大值。 */
+        private _scannedMaxCellSpan = 1;
 
-    public register(definitions: ReelSymbolCellDefinition[]): void {
-        for (const definition of definitions) {
-            if (!Number.isInteger(definition.symbolId)) {
-                throw new Error("symbolId must be an integer.");
+        /** `getMaxCellSpan()` 的 `Map.forEach` visitor（lib 只允許 forEach 走訪 Map）。 */
+        private readonly _maxCellSpanVisitor = (cellSpan: number): void => {
+            if (cellSpan > this._scannedMaxCellSpan) {
+                this._scannedMaxCellSpan = cellSpan;
             }
+        };
 
-            if (
-                !Number.isInteger(definition.cellSpan)
-                || definition.cellSpan <= 0
-            ) {
-                throw new Error("cellSpan must be a positive integer.");
+        public register(definitions: ReelSymbolCellDefinition[]): void {
+            for (const definition of definitions) {
+                if (!Number.isInteger(definition.symbolId)) {
+                    throw new Error("symbolId must be an integer.");
+                }
+
+                if (
+                    !Number.isInteger(definition.cellSpan)
+                    || definition.cellSpan <= 0
+                ) {
+                    throw new Error("cellSpan must be a positive integer.");
+                }
+
+                const displayPriority =
+                    definition.displayPriority !== undefined
+                        ? definition.displayPriority
+                        : 0;
+
+                if (!Number.isInteger(displayPriority)) {
+                    throw new Error(
+                        "displayPriority must be an integer.",
+                    );
+                }
+
+                this._cellSpans.set(
+                    definition.symbolId,
+                    definition.cellSpan,
+                );
+                this._displayPriorities.set(
+                    definition.symbolId,
+                    displayPriority,
+                );
             }
+        }
 
-            const displayPriority =
-                definition.displayPriority !== undefined
-                    ? definition.displayPriority
-                    : 0;
+        public getCellSpan(symbolId: number): number {
+            const cellSpan = this._cellSpans.get(symbolId);
 
-            if (!Number.isInteger(displayPriority)) {
+            if (cellSpan === undefined) {
                 throw new Error(
-                    "displayPriority must be an integer.",
+                    `Symbol ID ${symbolId} has not registered its cellSpan.`,
                 );
             }
 
-            this._cellSpans.set(
-                definition.symbolId,
-                definition.cellSpan,
-            );
-            this._displayPriorities.set(
-                definition.symbolId,
-                displayPriority,
-            );
-        }
-    }
-
-    public getCellSpan(symbolId: number): number {
-        const cellSpan = this._cellSpans.get(symbolId);
-
-        if (cellSpan === undefined) {
-            throw new Error(
-                `Symbol ID ${symbolId} has not registered its cellSpan.`,
-            );
+            return cellSpan;
         }
 
-        return cellSpan;
-    }
+        /** 取得 Symbol 在同一軸 Icon Container 內的顯示排序權重。 */
+        public getDisplayPriority(symbolId: number): number {
+            const priority = this._displayPriorities.get(symbolId);
+            return priority !== undefined ? priority : 0;
+        }
 
-    /** 取得 Symbol 在同一軸 Icon Container 內的顯示排序權重。 */
-    public getDisplayPriority(symbolId: number): number {
-        const priority = this._displayPriorities.get(symbolId);
-        return priority !== undefined ? priority : 0;
-    }
+        /**
+         * 目前已註冊的最大 cellSpan。
+         *
+         * BaseReel 用它決定進場／退場 buffer 各要幾格：整組必須能完整
+         * 容納在 buffer 內，玩家才不會看到 group 組裝到一半的樣子。
+         *
+         * 多軸情境建議由 Config 明寫 maxCellSpan 覆蓋此值 —— 不是因為各軸
+         * 必須一致（實測不必），而是讓 strip 長度不隨牌庫悄悄改變。否則某一軸
+         * 的牌庫剛好沒有大牌時，該軸的 strip 會比其他軸短，Turbo 同步
+         * 停輪的幾何前提就不成立。
+         *
+         * 尚未註冊任何 Symbol 時回傳 1。
+         */
+        public getMaxCellSpan(): number {
+            this._scannedMaxCellSpan = 1;
+            this._cellSpans.forEach(this._maxCellSpanVisitor);
+            return this._scannedMaxCellSpan;
+        }
 
-    /**
-     * 目前已註冊的最大 cellSpan。
-     *
-     * BaseReel 用它決定進場／退場 buffer 各要幾格：整組必須能完整
-     * 容納在 buffer 內，玩家才不會看到 group 組裝到一半的樣子。
-     *
-     * 多軸情境建議由 Config 明寫 maxCellSpan 覆蓋此值 —— 不是因為各軸
-     * 必須一致（實測不必），而是讓 strip 長度不隨牌庫悄悄改變。否則某一軸
-     * 的牌庫剛好沒有大牌時，該軸的 strip 會比其他軸短，Turbo 同步
-     * 停輪的幾何前提就不成立。
-     *
-     * 尚未註冊任何 Symbol 時回傳 1。
-     */
-    public getMaxCellSpan(): number {
-        let maxCellSpan = 1;
-
-        this._cellSpans.forEach((cellSpan) => {
-            if (cellSpan > maxCellSpan) {
-                maxCellSpan = cellSpan;
-            }
-        });
-
-        return maxCellSpan;
-    }
-
-    public clear(): void {
-        this._cellSpans.clear();
-        this._displayPriorities.clear();
+        public clear(): void {
+            this._cellSpans.clear();
+            this._displayPriorities.clear();
+        }
     }
 }
